@@ -9,12 +9,12 @@ left alone; its control logic is ported here and held to a differential test
 against it.
 
 ```
-ESP32-S3-DevKitC-1-N8R8            ESP32-P4-WIFI6-Touch-LCD-4.3
+ESP32-S3-DevKitC-1-N8R8            Guition JC4880P443C_I_W
 ┌───────────────────────┐          ┌───────────────────────────┐
 │ pumps, blower, heater │  SpaLink │ 480x800 capacitive touch  │
 │ light, fault monitor  │◄────────►│ WiFi 6 / BLE 5 (ESP32-C6) │
 │ NTC, flow, high limit │  UART    │ MQTT, app, OTA relay      │
-│ e-stop                │  →CAN    │                           │
+│ e-stop                │ →RS-485  │ ST7701S DSI, GT911 touch  │
 │ MicroPython           │          │ ESP-IDF + LVGL (C)        │
 └───────────────────────┘          └───────────────────────────┘
    owns the plant                     owns the screen
@@ -78,7 +78,8 @@ Four suites:
 | P4 link transport (ESP-IDF UART) | written, **never compiled against IDF** |
 | P4 state model | done, tested |
 | P4 LVGL user interface | **not started** — stub only |
-| CAN transport | reserved on both sides, needs transceivers + a MicroPython TWAI build |
+| RS-485 for the install | HMI transceiver is on-board and self-directing; S3 needs one added |
+| CAN transport | superseded by RS-485; pins and codec support retained |
 | MQTT / BLE / OTA on the C6 | **not started** |
 
 Nothing here has been on a board yet. The pieces marked *tested* are tested as
@@ -86,16 +87,20 @@ logic on a host; the pieces marked *written* have not been executed at all.
 
 ## Next steps
 
-1. **Verify the P4 pin numbers against the schematic** and fix
-   `p4_hmi/main/board_pins.h`. They came from the vendor's published header list,
-   not the board.
+1. **Confirm the board model.** The pin map in `p4_hmi/main/board_pins.h` is now
+   taken from published JC4880P443C_I_W schematics, but Guition ships several
+   4.3" P4 variants that are not pin-compatible, and the supplier's own download
+   could not be read directly. Check the model, then check GPIO35 — it is listed
+   both as the boot button and on the JP1 header.
 2. Bring up the link on the bench: three wires, both boards logging. The S3's
    `link: up` and the P4's `[up] water=... ` lines are the whole handshake.
 3. Bring up the panel on the Waveshare BSP, then build the LVGL screen. It is
    480×800 portrait where the old HMI was 480×320 landscape, so this is a fresh
    layout rather than a port — which is why no guessed design is checked in.
 4. Move MQTT and BLE onto the C6, then the OTA relay to the S3.
-5. Fit CAN transceivers and switch the transport — one constructor on each side.
+5. Move the link to RS-485 for the install: one transceiver at the S3 end, build
+   the P4 with `SPALINK_USE_RS485`, 120 Ω at each end of the pair. No protocol
+   change — see `docs/HARDWARE.md`.
 
 ## Inherited from openplc-hot-tub v2.0
 

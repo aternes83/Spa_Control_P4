@@ -17,9 +17,12 @@ bench, which is a miserable way to find a typo.
 2. **Silence is a safe state, not an unknown one.** Both ends time out at
    1500 ms. The S3 falls back to `failsafe_requests()`; the P4 marks its screen
    stale. Neither end waits for the other to say goodbye.
-3. **Payloads are at most 7 bytes.** That is the whole reason the protocol can
-   move from UART to CAN without a redesign: 7 bytes plus the header byte is one
-   classic CAN frame, so no fragmentation layer is ever needed.
+3. **Payloads are at most 7 bytes.** Seven bytes plus the header is exactly one
+   classic CAN frame, so the protocol can move to a CAN bus without a
+   fragmentation layer. The install link is now RS-485 rather than CAN (see
+   `docs/HARDWARE.md`), which needs no such guarantee — but the cap costs
+   nothing, keeps every message a single atomic unit on any transport, and
+   leaves the door open if a third node ever joins.
 4. **No floats on the wire.** Temperatures are deci-Fahrenheit in a signed
    16-bit word, so the C and Python sides cannot disagree about rounding.
 
@@ -33,7 +36,7 @@ hdr:  bit 7  RESP   this frame is a response (ACK/NACK)
       bits 0-5      sequence number, wraps at 64
 ```
 
-### UART transport (bring-up, and today's default)
+### UART transport (both wirings: direct TTL on the bench, RS-485 for the install)
 
 ```
 7E | msg_id | hdr | len | payload[len] | crc_hi | crc_lo
@@ -47,7 +50,7 @@ hdr:  bit 7  RESP   this frame is a response (ACK/NACK)
 * A `7E` mid-frame abandons the partial frame and starts a new one. A truncated
   frame must never swallow the good frame behind it.
 
-### CAN transport (the install)
+### CAN transport (retained, not currently planned)
 
 The same messages, unchanged. CAN supplies framing, CRC and ACK, so none of the
 UART machinery is used:
@@ -121,7 +124,7 @@ leave the screen showing a number the controller is not using.
 | S3 state broadcast | 200 ms | 5 Hz is smooth on screen and idle on the wire |
 | P4 request/keepalive | 400 ms | four per timeout window; one loss is harmless |
 | Link timeout, both ends | 1500 ms | rides out a P4 reflash blip; a user still sees jets stop |
-| UART baud | 115200 | ~1 % of capacity at this rate — headroom for noise, not speed |
+| UART baud | 115200 | ~1 % of capacity — headroom for noise, not speed |
 
 ## Failure behaviour
 

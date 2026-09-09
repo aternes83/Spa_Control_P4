@@ -82,11 +82,13 @@ def _read_inputs(ins):
 
 
 def _open_link():
-    """UART today. Swap this one call for CanTransport once the transceivers are
-    fitted — nothing above it changes. See docs/HARDWARE.md."""
+    """The link is a UART either way — direct TTL on the bench, RS485 for the
+    install. Only board_pins.LINK_PINS["RS485_DE"] changes: set it to the DE pin
+    of the transceiver on this board, or None for a direct connection or an
+    auto-direction module. See docs/HARDWARE.md."""
     return link.LinkSession(link.UartTransport(
         bp.LINK_UART_ID, bp.LINK_PINS["UART_TX"], bp.LINK_PINS["UART_RX"],
-        bp.LINK_BAUD))
+        bp.LINK_BAUD, de_pin=bp.LINK_PINS.get("RS485_DE")))
 
 
 def main():

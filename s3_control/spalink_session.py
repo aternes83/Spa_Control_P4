@@ -47,16 +47,47 @@ LINK_TIMEOUT_MS = 1500
 
 
 class UartTransport:
-    """MicroPython UART transport. Byte stream in, framed messages out."""
+    """MicroPython UART transport. Byte stream in, framed messages out.
 
-    def __init__(self, uart_id, tx, rx, baud=115200):
+    Covers both wirings. Point-to-point TTL needs nothing extra. Half-duplex
+    RS485 needs the driver enabled only while transmitting, so pass de_pin and
+    this class raises it around each frame. Pass de_pin=None for a direct
+    connection or an auto-direction transceiver — including the P4's on-board
+    MAX485, which drives its own DE/RE from the TX line.
+    """
+
+    def __init__(self, uart_id, tx, rx, baud=115200, de_pin=None):
         from machine import UART, Pin
         self.uart = UART(uart_id, baudrate=baud, tx=Pin(tx), rx=Pin(rx),
                          timeout=0, timeout_char=0)
         self._dec = codec.Decoder()
+        self._de = Pin(de_pin, Pin.OUT, value=0) if de_pin is not None else None
+        # 10 bit-times per byte (start + 8 + stop), in microseconds.
+        self._byte_us = (10 * 1000000) // baud
 
     def send(self, msg_id, hdr, payload=b""):
-        self.uart.write(codec.encode_uart(msg_id, hdr, payload))
+        data = codec.encode_uart(msg_id, hdr, payload)
+        if self._de is None:
+            self.uart.write(data)
+            return
+
+        # Hold the driver on until the last stop bit has actually left the shift
+        # register. Releasing early truncates the frame on the wire — and it
+        # decodes as a CRC error at the far end, not as anything obviously
+        # timing-related, so it is worth getting right here rather than
+        # debugging it on an oscilloscope later.
+        self._de.value(1)
+        try:
+            self.uart.write(data)
+            if hasattr(self.uart, "txdone"):
+                while not self.uart.txdone():
+                    pass
+            else:
+                # No txdone() on this port: wait out the frame, plus a margin.
+                # ~1 ms for a 12-byte frame at 115200, inside the 50 ms scan.
+                time_mod.sleep_us(self._byte_us * len(data) + 200)
+        finally:
+            self._de.value(0)
 
     def poll(self):
         n = self.uart.any()
@@ -69,13 +100,18 @@ class UartTransport:
 
 
 class CanTransport:
-    """TWAI/CAN transport.
+    """TWAI/CAN transport — kept, but no longer the planned upgrade path.
 
-    Not usable on a stock MicroPython build: TWAI is not in mainline (see
-    micropython/micropython#12331). It needs a firmware built with the
-    straga/micropython-esp32-twai USER_C_MODULE, which exposes machine.CAN.
-    Wiring and transceiver notes are in docs/HARDWARE.md. Kept here so the
-    switch is a constructor change, not a protocol rewrite.
+    RS485 replaced it: the HMI board already carries a MAX485 with automatic
+    direction control, so a differential link needs no protocol change, no new
+    driver, and no custom firmware. CAN would need all three on this end, since
+    TWAI is not in mainline MicroPython (micropython/micropython#12331) and
+    requires a build with the straga/micropython-esp32-twai USER_C_MODULE to get
+    machine.CAN. Use UartTransport with de_pin instead.
+
+    Left in place because the message set already fits a CAN frame (payloads are
+    capped at 7 bytes for exactly that reason), so if a third node ever joins the
+    bus this is a constructor change rather than a rewrite.
     """
 
     def __init__(self, tx, rx, bitrate=500000):

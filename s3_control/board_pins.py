@@ -56,16 +56,27 @@ SENSOR_PINS = {
 }
 
 # ── SpaLink to the P4 HMI board ──────────────────────────────────────────────
-# UART is the bring-up transport; CAN pins are reserved now so the harness does
-# not have to be rebuilt when the link moves to a differential pair. See
-# docs/HARDWARE.md for the interlink cable and the CAN transceiver notes.
+# The link is a plain async UART on this side in both wiring schemes, because
+# the HMI board carries an on-board MAX485: bench wiring is single-ended between
+# the two UARTs, install wiring puts an RS485 transceiver on this end and runs a
+# differential pair to the P4's. Same pins, same protocol, same driver — only the
+# physical layer changes. See docs/HARDWARE.md.
 LINK_PINS = {
     "UART_TX": 47,
     "UART_RX": 48,
-    "CAN_TX": 42,        # to transceiver TXD (e.g. SN65HVD230 / TJA1051T/3)
-    "CAN_RX": 2,         # from transceiver RXD
+    # Direction control for an RS485 transceiver on THIS board. The P4's on-board
+    # MAX485 switches itself (its DE/RE is driven from TX through a 74LVC1G132),
+    # but the common bare MAX485 breakouts do not. Set to None if you fit an
+    # auto-direction module; UartTransport handles either.
+    "RS485_DE": 1,       # DE and /RE tied together
+    # Reserved. CAN is no longer the planned upgrade path — RS485 gives the same
+    # noise immunity over this run, needs no protocol change, and avoids a custom
+    # MicroPython build (TWAI is not in mainline). Kept only so the pins are not
+    # reused if that ever changes.
+    "CAN_TX": 42,
+    "CAN_RX": 2,
 }
 LINK_UART_ID = 1         # UART0 is the console; UART1 is the link
 LINK_BAUD = 115200
 
-# Unassigned and available: GPIO1, GPIO3, GPIO45 (input-only), GPIO46 (strap).
+# Unassigned and available: GPIO3, GPIO45 (input-only), GPIO46 (strap).
