@@ -1,0 +1,18 @@
+# ESP-IDF
+p4_hmi/build/
+p4_hmi/sdkconfig
+p4_hmi/sdkconfig.old
+p4_hmi/managed_components/
+p4_hmi/dependencies.lock
+
+# Python / MicroPython
+__pycache__/
+*.pyc
+*.mpy
+
+# Device config with real credentials — commit config.example.json instead
+s3_control/config.json
+
+# Build/test scratch
+*.o
+*.out

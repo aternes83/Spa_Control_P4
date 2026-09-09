@@ -1,0 +1,16 @@
+CONFIG_IDF_TARGET="esp32p4"
+
+# The P4 has in-package PSRAM on this board; the framebuffer for a 480x800 panel
+# does not fit in internal RAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+
+# The control loop lives on the S3, so this node can afford a normal tick rate.
+CONFIG_FREERTOS_HZ=1000
+
+# Keep the console on UART0 so the link on UART1 is never contended.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Networking runs through the on-board ESP32-C6 over SDIO (esp_hosted). Enable
+# the remote-radio components when the MQTT/BLE work starts.

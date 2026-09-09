@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "spa_state.c"
+        "spalink_port.c"
+        "../../link/spalink_codec.c"
+    INCLUDE_DIRS
+        "."
+        "../../link"
+)
