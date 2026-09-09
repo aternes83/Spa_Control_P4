@@ -9,7 +9,7 @@ left alone; its control logic is ported here and held to a differential test
 against it.
 
 ```
-ESP32-S3-DevKitC-1-N8R8            Guition JC4880P443C_I_W
+ESP32-S3-DevKitC-1-N8R8            Guition JC-ESP32P4-M3, 4.3"
 ┌───────────────────────┐          ┌───────────────────────────┐
 │ pumps, blower, heater │  SpaLink │ 480x800 capacitive touch  │
 │ light, fault monitor  │◄────────►│ WiFi 6 / BLE 5 (ESP32-C6) │
@@ -87,11 +87,12 @@ logic on a host; the pieces marked *written* have not been executed at all.
 
 ## Next steps
 
-1. **Confirm the board model.** The pin map in `p4_hmi/main/board_pins.h` is now
-   taken from published JC4880P443C_I_W schematics, but Guition ships several
-   4.3" P4 variants that are not pin-compatible, and the supplier's own download
-   could not be read directly. Check the model, then check GPIO35 — it is listed
-   both as the boot button and on the JP1 header.
+1. **Confirm the carrier.** The module is confirmed as JC-ESP32P4-M3 from the
+   silkscreen, so its C6/SDIO pins are settled. The 4.3" carrier it is fitted to
+   is not: `p4_hmi/main/board_pins.h` uses published JC4880P443C_I_W data, and
+   Guition's carriers are not pin-compatible with each other. `docs/HARDWARE.md`
+   has a two-minute visual check — look for the MAX485 and the `Ao`/`Bo`
+   connector, the 26-pin JP1 header, and whether GPIO35 is also a button.
 2. Bring up the link on the bench: three wires, both boards logging. The S3's
    `link: up` and the P4's `[up] water=... ` lines are the whole handshake.
 3. Bring up the panel on the Waveshare BSP, then build the LVGL screen. It is

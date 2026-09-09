@@ -1,23 +1,25 @@
 /*
- * BOARD PIN MAP — Guition JC4880P443C_I_W (ESP32-P4 + ESP32-C6), HMI node.
- * 4.3" 480x800 IPS, ST7701S over MIPI-DSI, GT911 capacitive touch.
+ * BOARD PIN MAP — HMI node.
+ *
+ * Module:  Guition JC-ESP32P4-M3  (confirmed from the board silkscreen)
+ *          ESP32-P4 + ESP32-C6-MINI, 32 MB PSRAM, 16 MB flash.
+ * Carrier: 4.3" 480x800 IPS display board, ST7701S over MIPI-DSI, GT911 touch.
+ *          Guition's JC4880P443C_I_W / JC4880P433 family — NOT yet confirmed.
  *
  * Same rule as the S3 side: every GPIO this firmware touches is named here and
  * nowhere else.
  *
- * SOURCE AND CONFIDENCE
- * ---------------------
- * Taken from the schematic sheets and pin table published at
- * github.com/ultramcu/guition-jc4880p443c-i-w — community-maintained, but
- * derived from the vendor schematics. The supplier's own pan.jczn1688.com
- * download could not be read directly (it is a JS app behind a 403), so:
+ * The split below matters. The MODULE pins are fixed by the JC-ESP32P4-M3 itself
+ * and hold whatever it is plugged into. The CARRIER pins belong to the 4.3"
+ * display board, and Guition ships several carriers for this module that are not
+ * pin-compatible — the JC-ESP32P4-M3-DEV board, for instance, puts an Ethernet
+ * PHY on GPIO31/50/51/52, which are free header pins on the display carrier.
+ * So treat everything under CARRIER as provisional until checked.
  *
- *   * CONFIRM the board's exact model number before wiring. Guition ships
- *     several 4.3" P4 variants and they are not pin-compatible.
- *   * The RS485 transceiver is present on "the RS485 build" of this board.
- *     On variants without it, GPIO26 is the builtin LED instead.
- *   * Reported GPIO35 conflict: listed both as the boot button and on JP1.
- *     Treat it as taken until you have checked.
+ * Carrier data comes from the schematic sheets and pin table published at
+ * github.com/ultramcu/guition-jc4880p443c-i-w (community-maintained, derived
+ * from vendor schematics). The supplier's own pan.jczn1688.com download is a JS
+ * app behind a 403 and could not be read directly.
  */
 #ifndef BOARD_PINS_H
 #define BOARD_PINS_H
@@ -30,7 +32,8 @@
  * change between them (docs/PROTOCOL.md).
  *
  * BENCH: any free JP1 pins, single-ended, short wires.
- * INSTALL: UART1 at GPIO26/27 is wired to an on-board MAX485. Its DE/RE is
+ * INSTALL: UART1 at GPIO26/27 is wired to an on-board MAX485 on carriers that
+ * have one — see the visual check in docs/HARDWARE.md. Its DE/RE is
  * driven from the TX line itself through a 74LVC1G132 + transistor, i.e.
  * automatic direction control — no GPIO, and no turnaround code on this side.
  * That gives a differential, noise-immune pair for the run past the pump
@@ -49,20 +52,32 @@
 #endif
 #define LINK_BAUD      115200
 
-/* ── On-board peripherals — owned by the BSP, listed so nothing double-books ─ */
+/* ── MODULE pins — fixed by the JC-ESP32P4-M3, confirmed ────────────────────
+ * ESP32-C6 radio over SDIO: CLK 18, CMD 19, D0-D3 on 14/15/16/17.
+ * C6 reset: GPIO54.
+ * Not touched by this firmware — esp_hosted owns them — but recorded so no
+ * later pin assignment can collide with the radio. */
+#define C6_SDIO_CLK   18
+#define C6_SDIO_CMD   19
+#define C6_SDIO_D0    14
+#define C6_SDIO_D1    15
+#define C6_SDIO_D2    16
+#define C6_SDIO_D3    17
+#define C6_RESET_GPIO 54
+
+/* ── CARRIER pins — 4.3" display board, VERIFY before wiring ────────────────
+ * Owned by the BSP, listed so nothing double-books them. */
 #define LCD_RESET_GPIO      5    /* active-low, 20-120 ms pulse */
 #define LCD_BACKLIGHT_GPIO  23   /* MP3202 driver enable; plain GPIO, active high */
 #define TOUCH_I2C_SDA       7    /* GT911 @ 0x5D, I2C shared with the ES8311 codec */
 #define TOUCH_I2C_SCL       8
 #define TOUCH_RESET_GPIO    3    /* some community docs cite GPIO22 — verify */
 
-/* SDMMC card: CLK 43, CMD 44, D0-D3 on 39/40/41/42.
- * ESP32-C6 radio over SDIO: CLK 18, CMD 19, D0-D3 on 14/15/16/17; reset GPIO54.
- * ES8311 audio: MCLK 13, BCLK 12, LRCK 10, DOUT 9, DIN 48; amp enable GPIO11.
- * Console UART0: TX 37, RX 38.
- * Boot button: GPIO35.
- * None of the above are touched by this firmware; they are here so a future pin
- * assignment cannot silently collide with them. */
+/* Also on the carrier and not used here:
+ *   microSD (SDMMC) : CLK 43, CMD 44, D0-D3 on 39/40/41/42
+ *   ES8311 audio    : MCLK 13, BCLK 12, LRCK 10, DOUT 9, DIN 48; amp enable 11
+ *   console UART0   : TX 37, RX 38
+ *   boot button     : GPIO35  (also listed on JP1 — check before using it) */
 
 /* ── Free on the Expand-IO header (JP1) ──────────────────────────────────────
  * GPIO28, 29, 30, 31, 32, 33, 34, 35(?), 49, 50, 51, 52, plus 3V3, 5V and GND.

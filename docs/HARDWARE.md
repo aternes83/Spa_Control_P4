@@ -4,7 +4,7 @@ Two boards, one cable.
 
 ```
         ┌─────────────────────────────┐        ┌──────────────────────────────┐
-        │  ESP32-S3-DevKitC-1-N8R8    │        │  Guition JC4880P443C_I_W    │
+        │  ESP32-S3-DevKitC-1-N8R8    │        │  Guition JC-ESP32P4-M3      │
         │  control node               │        │  HMI node                    │
         │                             │        │                              │
   NTC ──┤ GPIO6  ADC1_CH5             │        │   480x800 MIPI-DSI, cap touch│
@@ -31,24 +31,40 @@ Both are single blocks, and they are the only place GPIO numbers appear:
 The S3 map is inherited from the v2.0 firmware with the display and touch pins
 removed (the HMI moved across the link), which frees GPIO1/2/3/42/43/44/45/47/48.
 
-> **Confirm the board model before wiring.** The P4 pin map now comes from the
-> schematic sheets and pin table published at
-> [ultramcu/guition-jc4880p443c-i-w](https://github.com/ultramcu/guition-jc4880p443c-i-w)
-> — community-maintained, but derived from the vendor schematics. The supplier's
-> own [pan.jczn1688.com](https://pan.jczn1688.com/1#/) download is a JS app
-> behind a 403 and could not be read directly, so the model number has not been
-> confirmed against your actual board. Guition ships several 4.3" P4 variants
-> and they are **not** pin-compatible.
+### Module vs carrier
 
-Confirmed on-board and owned by the BSP, not by this firmware: ST7701S MIPI-DSI
-panel (2 lanes, 480×800) with reset on GPIO5 and an MP3202 backlight driver on
-GPIO23; GT911 touch at I²C address 0x5D on GPIO7/8; ESP32-C6 radio over SDIO on
-GPIO14–19 with reset on GPIO54; ES8311 audio on GPIO9–13 and 48; microSD on
-GPIO39–44; console UART0 on GPIO37/38.
+The silkscreen reads **Guition JC-ESP32P4-M3**. That is the *module* — the
+ESP32-P4 + ESP32-C6-MINI system-on-module with 32 MB PSRAM and 16 MB flash. It
+is soldered to a 4.3" display *carrier*, and the two have different levels of
+certainty:
 
-Free on the **Expand-IO header (JP1)**: GPIO28–35 and GPIO49–52, plus 3V3, 5V
-and GND. JP1 also carries the C6's UART0 and boot/reset pins, which is how the
-radio co-processor gets reflashed.
+* **Module pins are settled.** The C6 radio sits on SDIO — CLK 18, CMD 19,
+  D0–D3 on 14–17, reset on GPIO54 — for any board this module is fitted to.
+* **Carrier pins are provisional.** Guition ships several carriers for this
+  module and they are not pin-compatible. The JC-ESP32P4-M3-DEV board, for
+  instance, puts an Ethernet PHY on GPIO31/50/51/52 — the very pins that are free
+  header I/O on the 4.3" display carrier.
+
+The carrier data below comes from the published
+[JC4880P443C_I_W schematics](https://github.com/ultramcu/guition-jc4880p443c-i-w),
+which is the closest documented match for a 4.3" 480×800 carrier. Confirm it
+against your board.
+
+### Confirming your carrier in two minutes
+
+Three things to look for, no instruments needed:
+
+1. **RS-485.** Find an 8-pin SOIC near a 4-pin connector, marked `485` (MAX485 /
+   ADM485 — `U8` on the schematic). The connector beside it (`J4`) is silkscreened
+   **`Ao` / `Bo`** and carries two A/B pairs so the bus can be daisy-chained.
+   Present → the install link is RS-485 on GPIO26/27 and needs no parts on this
+   board. Absent → GPIO26 is the builtin LED instead, and the link stays TTL or
+   gets a transceiver at both ends.
+2. **The Expand-IO header, `JP1`.** A 26-pin (2×13) header. Pin 1 is 3V3 and
+   pin 2 is 5V; it breaks out GPIO28–35 and GPIO49–52, and the C6's UART0 plus
+   boot/reset for reflashing the radio.
+3. **GPIO35.** Listed both as the boot button and on JP1. If it appears on JP1
+   *and* a button, leave it alone — there are eleven other free pins.
 
 ## The interlink cable
 
@@ -56,8 +72,9 @@ radio co-processor gets reflashed.
 ground. Both boards are 3.3 V logic, so no level shifting. Keep it under about a
 metre. If the boards are on separate supplies the ground wire is not optional.
 
-**Install — RS-485, using the transceiver already on the HMI board.** This is
-the part worth knowing about: the Guition board carries a **MAX485 on UART1
+**Install — RS-485, using the transceiver already on the HMI board** (assuming
+check 1 above passes). This is the part worth knowing about: the carrier has a
+**MAX485 on UART1
 (GPIO26 TX / GPIO27 RX)**, and its DE/RE is driven from the TX line itself
 through a 74LVC1G132 and a transistor. That is automatic direction control — the
 P4 needs no direction GPIO and no turnaround code.
