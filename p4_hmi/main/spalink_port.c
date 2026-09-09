@@ -65,16 +65,30 @@ int spalink_port_init(const spalink_port_cfg_t *cfg)
     if (err) return err;
     err = uart_param_config(cfg->uart_num, &uc);
     if (err) return err;
+    /* RTS stays unassigned even on RS485: the carrier's SP485E switches its own
+     * DE//RE from the TX line through a 74LVC1G132, so there is no direction pin
+     * to drive. The vendor's uart_echo_rs485 example does exactly the same. */
     err = uart_set_pin(cfg->uart_num, cfg->tx_gpio, cfg->rx_gpio,
                        UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (err) return err;
+
+    if (cfg->rs485) {
+        /* Half-duplex mode still earns its place with no RTS pin: it stops the
+         * UART receiving its own transmission. The hardware already disables the
+         * receiver while the driver is on (RE is tied to DE), so this is belt
+         * and braces — but a self-echo would show up as phantom frames, and
+         * those are tedious to chase. */
+        err = uart_set_mode(cfg->uart_num, UART_MODE_RS485_HALF_DUPLEX);
+        if (err) return err;
+    }
 
     s_uart = cfg->uart_num;
     if (xTaskCreate(rx_task, "spalink_rx", 3072, NULL, 10, NULL) != pdPASS) {
         return -1;
     }
-    ESP_LOGI(TAG, "link up on uart%d tx=%d rx=%d @%d",
-             cfg->uart_num, cfg->tx_gpio, cfg->rx_gpio, cfg->baud);
+    ESP_LOGI(TAG, "link up on uart%d tx=%d rx=%d @%d (%s)",
+             cfg->uart_num, cfg->tx_gpio, cfg->rx_gpio, cfg->baud,
+             cfg->rs485 ? "RS485 half-duplex" : "TTL");
     return 0;
 }
 

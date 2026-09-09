@@ -17,10 +17,11 @@
 #include "spalink_codec.h"
 
 typedef struct {
-    int uart_num;
-    int tx_gpio;
-    int rx_gpio;
-    int baud;
+    int  uart_num;
+    int  tx_gpio;
+    int  rx_gpio;
+    int  baud;
+    bool rs485;   /* true for the on-board SP485E; see spalink_port_init() */
 } spalink_port_cfg_t;
 
 /* Starts the receive task. Returns ESP_OK-style 0 on success. */

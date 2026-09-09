@@ -77,8 +77,8 @@ Four suites:
 | NTC sensor | ported; math checked on host |
 | P4 link transport (ESP-IDF UART) | written, **never compiled against IDF** |
 | P4 state model | done, tested |
-| P4 LVGL user interface | **not started** — stub only |
-| RS-485 for the install | **confirmed**: SP485E on the HMI board, self-directing; S3 needs a 3.3 V transceiver added |
+| P4 LVGL user interface | **not started** — stub only; BSP + panel timings now known |
+| RS-485 for the install | **verified against vendor schematics**: SP485E on GPIO26/27, self-directing; S3 needs a 3.3 V transceiver added |
 | CAN transport | superseded by RS-485; pins and codec support retained |
 | MQTT / BLE / OTA on the C6 | **not started** |
 
@@ -88,15 +88,16 @@ logic on a host; the pieces marked *written* have not been executed at all.
 ## Next steps
 
 1. **Fit a 3.3 V RS-485 transceiver at the S3 end** (MAX3485 / SP3485 /
-   THVD1450) and tie its DE//RE to `LINK_PINS["RS485_DE"]`. The HMI end is
-   already done — an SP485E with automatic direction control, confirmed on the
-   board. Then build the P4 with `SPALINK_USE_RS485` and bring the link up
-   straight onto the bus; the TTL bench step is optional.
+   THVD1450), tie its DE//RE to `LINK_PINS["RS485_DE"]`, 120 Ω at each end. The
+   HMI end is already built and self-directing. Prove the physical layer with
+   the vendor's own `uart_echo_rs485` example before running any of our code.
 2. Bring up the link on the bench: three wires, both boards logging. The S3's
    `link: up` and the P4's `[up] water=... ` lines are the whole handshake.
-3. Bring up the panel on the Waveshare BSP, then build the LVGL screen. It is
-   480×800 portrait where the old HMI was 480×320 landscape, so this is a fresh
-   layout rather than a port — which is why no guessed design is checked in.
+3. Bring up the panel on the vendor BSP (`esp32_p4_function_ev_board` +
+   `esp_lcd_st7701` + LVGL 9.5, all shipped in the documentation package), then
+   build the screen. 480×800 portrait where the old HMI was 480×320 landscape,
+   so this is a fresh layout rather than a port — which is why no guessed design
+   is checked in. Panel timings are in `docs/HARDWARE.md`.
 4. Move MQTT and BLE onto the C6, then the OTA relay to the S3.
 5. Move the link to RS-485 for the install: one transceiver at the S3 end, build
    the P4 with `SPALINK_USE_RS485`, 120 Ω at each end of the pair. No protocol

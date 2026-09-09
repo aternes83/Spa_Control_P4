@@ -123,9 +123,17 @@ void app_main(void)
 
     const spalink_port_cfg_t cfg = {
         .uart_num = LINK_UART_NUM,
-        .tx_gpio  = LINK_UART_TX,
+#ifdef SPALINK_BENCH_TTL
+        .tx_gpio  = LINK_BENCH_UART_TX,
+        .rx_gpio  = LINK_BENCH_UART_RX,
+        .baud     = LINK_BAUD,
+        .rs485    = false,
+#else
+        .tx_gpio  = LINK_UART_TX,      /* through the on-board SP485E */
         .rx_gpio  = LINK_UART_RX,
         .baud     = LINK_BAUD,
+        .rs485    = true,
+#endif
     };
     if (spalink_port_init(&cfg) != 0) {
         ESP_LOGE(TAG, "link init failed");

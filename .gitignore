@@ -16,3 +16,10 @@ s3_control/config.json
 # Build/test scratch
 *.o
 *.out
+
+# Vendor documentation drop (545 MB: schematics, datasheets, IDF/Arduino demos,
+# flash tools). Kept out of git deliberately — the facts we depend on are
+# extracted into docs/HARDWARE.md and p4_hmi/main/board_pins.h, with the source
+# sheet named for each. Re-downloadable from pan.jczn1688.com.
+JC4880P443C_I_W/
+.DS_Store
