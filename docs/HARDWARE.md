@@ -54,15 +54,18 @@ against your board.
 
 Three things to look for, no instruments needed:
 
-1. **RS-485.** Find an 8-pin SOIC near a 4-pin connector, marked `485` (MAX485 /
-   ADM485 — `U8` on the schematic). The connector beside it (`J4`) is silkscreened
-   **`Ao` / `Bo`** and carries two A/B pairs so the bus can be daisy-chained.
-   Present → the install link is RS-485 on GPIO26/27 and needs no parts on this
-   board. Absent → GPIO26 is the builtin LED instead, and the link stays TTL or
-   gets a transceiver at both ends.
+1. ~~**RS-485.**~~ **CONFIRMED on this board:** an **SP485E** 8-pin SOIC beside
+   the 4-pin `Ao`/`Bo` connector. That is the Sipex/Exar half-duplex RS-485
+   transceiver, pin-for-pin the MAX485 on the schematic (`U8`): RO, /RE, DE, DI,
+   GND, A, B, VCC. The install link is RS-485 on GPIO26/27, with nothing to add
+   to the HMI board.
+With that answered, the remaining two no longer block anything — the link lives
+on GPIO26/27, so the header is not on the critical path:
+
 2. **The Expand-IO header, `JP1`.** A 26-pin (2×13) header. Pin 1 is 3V3 and
    pin 2 is 5V; it breaks out GPIO28–35 and GPIO49–52, and the C6's UART0 plus
-   boot/reset for reflashing the radio.
+   boot/reset for reflashing the radio. Only needed if you want a TTL bench link
+   before fitting the S3's transceiver, or for future I/O.
 3. **GPIO35.** Listed both as the boot button and on JP1. If it appears on JP1
    *and* a button, leave it alone — there are eleven other free pins.
 
@@ -72,12 +75,19 @@ Three things to look for, no instruments needed:
 ground. Both boards are 3.3 V logic, so no level shifting. Keep it under about a
 metre. If the boards are on separate supplies the ground wire is not optional.
 
-**Install — RS-485, using the transceiver already on the HMI board** (assuming
-check 1 above passes). This is the part worth knowing about: the carrier has a
-**MAX485 on UART1
-(GPIO26 TX / GPIO27 RX)**, and its DE/RE is driven from the TX line itself
+**Install — RS-485, using the transceiver already on the HMI board.** Confirmed
+present: an **SP485E on UART1
+(GPIO26 TX / GPIO27 RX)**, and its DE//RE is driven from the TX line itself
 through a 74LVC1G132 and a transistor. That is automatic direction control — the
 P4 needs no direction GPIO and no turnaround code.
+
+**Fit a 3.3 V transceiver at the S3 end** — MAX3485, SP3485 or THVD1450, powered
+from 3.3 V. Not for the bus (A/B levels interoperate between 3.3 V and 5 V parts;
+that is the point of differential signalling) but for the receive pin: the
+SP485E is a 5 V part, so a 5 V transceiver at the S3 end would drive its RO
+output 0–5 V into a 3.3 V GPIO. The HMI carrier gets away with it via a 1 k
+series resistor into the P4's clamp diode; there is no reason to repeat that
+here when the 3.3 V part costs the same.
 
 So the install link is:
 

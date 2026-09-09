@@ -78,7 +78,7 @@ Four suites:
 | P4 link transport (ESP-IDF UART) | written, **never compiled against IDF** |
 | P4 state model | done, tested |
 | P4 LVGL user interface | **not started** — stub only |
-| RS-485 for the install | HMI transceiver is on-board and self-directing; S3 needs one added |
+| RS-485 for the install | **confirmed**: SP485E on the HMI board, self-directing; S3 needs a 3.3 V transceiver added |
 | CAN transport | superseded by RS-485; pins and codec support retained |
 | MQTT / BLE / OTA on the C6 | **not started** |
 
@@ -87,12 +87,11 @@ logic on a host; the pieces marked *written* have not been executed at all.
 
 ## Next steps
 
-1. **Confirm the carrier.** The module is confirmed as JC-ESP32P4-M3 from the
-   silkscreen, so its C6/SDIO pins are settled. The 4.3" carrier it is fitted to
-   is not: `p4_hmi/main/board_pins.h` uses published JC4880P443C_I_W data, and
-   Guition's carriers are not pin-compatible with each other. `docs/HARDWARE.md`
-   has a two-minute visual check — look for the MAX485 and the `Ao`/`Bo`
-   connector, the 26-pin JP1 header, and whether GPIO35 is also a button.
+1. **Fit a 3.3 V RS-485 transceiver at the S3 end** (MAX3485 / SP3485 /
+   THVD1450) and tie its DE//RE to `LINK_PINS["RS485_DE"]`. The HMI end is
+   already done — an SP485E with automatic direction control, confirmed on the
+   board. Then build the P4 with `SPALINK_USE_RS485` and bring the link up
+   straight onto the bus; the TTL bench step is optional.
 2. Bring up the link on the bench: three wires, both boards logging. The S3's
    `link: up` and the P4's `[up] water=... ` lines are the whole handshake.
 3. Bring up the panel on the Waveshare BSP, then build the LVGL screen. It is

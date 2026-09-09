@@ -31,9 +31,20 @@
  * Two transports, both plain async UART — which is why the protocol does not
  * change between them (docs/PROTOCOL.md).
  *
- * BENCH: any free JP1 pins, single-ended, short wires.
- * INSTALL: UART1 at GPIO26/27 is wired to an on-board MAX485 on carriers that
- * have one — see the visual check in docs/HARDWARE.md. Its DE/RE is
+ * RS485 IS CONFIRMED PRESENT on this carrier: an SP485E (8-pin SOIC, the Sipex
+ * part that is pin-compatible with the MAX485 on the schematic) sits beside the
+ * 4-pin Ao/Bo bus connector. Its DE//RE is driven from the TX line through a
+ * 74LVC1G132 and a transistor, so direction switching is automatic and needs no
+ * GPIO on this board.
+ *
+ * The SP485E runs at 5 V, so its RO output swings 0-5 V into GPIO27, which the
+ * carrier limits with a 1 k series resistor. That is the vendor's design, not
+ * ours, but it is why the S3 end should use a 3.3 V transceiver — see
+ * docs/HARDWARE.md.
+ *
+ * BENCH: any free JP1 pins, single-ended, short wires. Optional — with a
+ * transceiver at the S3 end you can bring up straight onto RS485 and skip this.
+ * INSTALL: UART1 on GPIO26/27, through the on-board SP485E. Its DE/RE is
  * driven from the TX line itself through a 74LVC1G132 + transistor, i.e.
  * automatic direction control — no GPIO, and no turnaround code on this side.
  * That gives a differential, noise-immune pair for the run past the pump
