@@ -19,6 +19,7 @@ run() {
 run "spalink codec (C vs Python)"  python3 tools/test_spalink.py
 run "control core + differential"  python3 tools/test_spa_core.py
 run "link session"                 python3 tools/test_link_session.py
+run "docs vs pin map"              python3 tools/test_docs.py
 
 echo
 echo "── HMI state model (C) ─────────────────────────────────────"

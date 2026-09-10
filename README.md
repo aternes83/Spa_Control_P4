@@ -43,7 +43,8 @@ by `spalink_session.failsafe_requests()` and tested in
 | `p4_hmi/` | HMI node firmware | ESP-IDF + LVGL (C) |
 | `tools/` | host tests — no hardware needed | Python + C |
 | `docs/PROTOCOL.md` | the wire protocol, and why it is shaped that way | |
-| `docs/HARDWARE.md` | pin maps, the interlink cable, CAN transceivers | |
+| `docs/HARDWARE.md` | pin maps, the interlink cable, verified against vendor schematics | |
+| `docs/WIRING.md` | complete point-to-point wiring diagrams and the parts list | |
 
 ## Tests
 
@@ -65,6 +66,8 @@ Four suites:
 * **`test_link_session.py`** — ACKs, sequence numbers, and the link-loss failsafe.
 * **`test_spa_state.c`** — the HMI's state model: staleness, short frames, and
   millisecond-clock wrap.
+* **`test_docs.py`** — every GPIO in the wiring diagrams against the pin map, so
+  a diagram someone wires from at 2 a.m. cannot drift out of date.
 
 ## Status
 

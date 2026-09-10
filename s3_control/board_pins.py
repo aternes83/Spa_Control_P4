@@ -64,9 +64,10 @@ SENSOR_PINS = {
 LINK_PINS = {
     "UART_TX": 47,
     "UART_RX": 48,
-    # Direction control for an RS485 transceiver on THIS board. The P4's on-board
-    # MAX485 switches itself (its DE/RE is driven from TX through a 74LVC1G132),
-    # but the common bare MAX485 breakouts do not. Set to None if you fit an
+    # Direction control for the RS485 transceiver on THIS board — a MAX3485CSA+
+    # (3.3 V; see docs/WIRING.md for why not a 5 V MAX485). The P4's on-board
+    # SP485E switches itself, its DE//RE being driven from TX through a
+    # 74LVC1G132, but a bare MAX3485 does not. Set to None if you fit an
     # auto-direction module; UartTransport handles either.
     "RS485_DE": 1,       # DE and /RE tied together
     # Reserved. CAN is no longer the planned upgrade path — RS485 gives the same

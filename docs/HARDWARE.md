@@ -1,6 +1,7 @@
 # Hardware
 
-Two boards, one cable.
+Two boards, one cable. Point-to-point diagrams and the parts list are in
+**[WIRING.md](WIRING.md)**; this file covers what the hardware *is* and why.
 
 ```
         ┌─────────────────────────────┐        ┌──────────────────────────────┐
@@ -110,8 +111,11 @@ S3  GPIO48 RX ──┤ MAX3485 ══ A/B twisted pair ══ SP485E ─┤─�
 S3  GPIO1  DE ──┘  (add)      120 Ω each end    (fitted, self-directing)
 ```
 
-**Fit a 3.3 V transceiver at the S3 end** — MAX3485, SP3485 or THVD1450. Not for
-the bus (A/B levels interoperate between 3.3 V and 5 V parts; that is the point
+**Fit a 3.3 V transceiver at the S3 end** — **`MAX3485CSA+`** (SOIC-8) is the
+default; `THVD1450DR` if you want ±18 kV ESD and bus-fault protection next to
+the contactors; the `SP3485` family is the direct 3.3 V sibling of the P4's
+SP485E. Full part list and pin-by-pin diagrams: **[WIRING.md](WIRING.md)**.
+Not for the bus (A/B levels interoperate between 3.3 V and 5 V parts; that is the point
 of differential signalling) but for the receive pin: the SP485E is a 5 V part,
 so a 5 V transceiver at the S3 end would drive its RO output 0–5 V into a 3.3 V
 GPIO. The carrier gets away with that through `R70`, a 1 k series resistor into
