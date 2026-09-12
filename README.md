@@ -59,6 +59,34 @@ ever fitted in parallel.
 | `docs/WIRING.md` | complete point-to-point wiring diagrams and the parts list | |
 | `docs/HMI.md` | the screen: layout, touch sizing for wet hands, and the state model behind it | |
 
+## Bringing up the S3
+
+Not yet done — this is the next milestone, and none of it has run on hardware.
+
+```sh
+# MicroPython v1.28 for the S3, then copy onto the board's filesystem:
+#   link/spalink_codec.py   -> /link/spalink_codec.py   (main.py adds /link to the path)
+#   s3_control/*.py         -> /
+#   s3_control/config.example.json -> /config.json      and edit it
+```
+
+`config.json` holds two things and no credentials — this node has no radio, so
+nothing about WiFi, MQTT or time lives here. `setpoint_f` is the thermostat
+target, and **the firmware writes it back** whenever the HMI changes it, so the
+file has to stay writable. `ntc_cal` is the water probe's calibration, preset to
+the 30 k Balboa M7 already in this tub; `offset_f` is the trim to set against a
+reference thermometer once it is up to temperature. A missing or unparseable file
+is survivable — `main.py` falls back to the defaults in `spa_core` and `sensors`,
+so a first boot with no config still runs the plant.
+
+`tools/test_docs.py` checks the example against the code that reads it, because a
+calibration that has drifted from `sensors.py` heats the tub to the wrong
+temperature and nothing on the screen says so.
+
+The handshake to look for is one line on each board: `link: up` from the S3 and
+`[up] water=...` from the P4. The P4 side is already proven against a simulated
+peer, so what is being tested here is the S3 and the three wires between them.
+
 ## Building the HMI
 
 ```sh
