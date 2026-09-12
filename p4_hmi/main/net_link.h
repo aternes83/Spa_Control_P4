@@ -62,6 +62,25 @@ bool net_link_wait_hosted(uint32_t timeout_ms);
 typedef void (*net_scan_cb_t)(void *ctx, const char *ssid, int rssi, bool secured);
 int net_link_scan(net_scan_cb_t cb, void *ctx);
 
+/* Set this tub's timezone, as a POSIX TZ string, and remember it.
+ *
+ * Per board, not per build. The phone that runs the wizard is standing next to
+ * the tub, so it is the only thing that reliably knows where the tub is — and a
+ * timezone compiled in means every board has to be rebuilt to be installed
+ * somewhere else. Stored in NVS, so it survives a reflash of the application.
+ *
+ * POSIX form ("EST5EDT,M3.2.0,M11.1.0"), not IANA ("America/New_York"): newlib
+ * on this chip carries no timezone database and would silently ignore the
+ * latter, leaving a clock that is confidently wrong. The app converts.
+ *
+ * Applies immediately — the clock does not wait for a reboot — and starts SNTP
+ * if an address is already held. NULL or empty clears it, and the header goes
+ * back to "--:--". */
+void net_link_set_tz(const char *posix_tz);
+
+/* What is in effect, or "" if none. For the diagnostics screen. */
+const char *net_link_tz(void);
+
 /* How a provisioning attempt ended. */
 typedef enum {
     NET_PROV_CONNECTING,

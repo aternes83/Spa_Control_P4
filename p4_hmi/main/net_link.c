@@ -19,6 +19,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 
 static const char *TAG = "net";
@@ -37,6 +38,8 @@ static EventGroupHandle_t s_events;
 #define EV_HOSTED_UP  BIT0
 static bool          s_started;        /* esp_wifi_start() has returned */
 static bool          s_prov_active;    /* an attempt is outstanding */
+static bool          s_sntp_running;
+static char          s_tz[64];
 static net_prov_cb_t s_prov_cb;
 static void         *s_prov_ctx;
 
@@ -149,6 +152,96 @@ static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+/* Start SNTP once, and only when there is a zone to interpret the result in.
+ * Without one the header keeps "--:--": UTC on a wall panel is a wrong time, and
+ * docs/HMI.md is explicit that a wrong time is worse than no time. */
+static void start_sntp(void)
+{
+    if (s_sntp_running || !s_up || s_tz[0] == '\0') {
+        return;
+    }
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    cfg.wait_for_sync = false;      /* never block an event handler */
+    cfg.start = true;
+    if (esp_netif_sntp_init(&cfg) == ESP_OK) {
+        s_sntp_running = true;
+        ESP_LOGI(TAG, "sntp started, TZ=%s", s_tz);
+    }
+}
+
+const char *net_link_tz(void) { return s_tz; }
+
+/* Load the stored zone, falling back to the build-time one. The stored value
+ * wins: a board provisioned in Denver should not revert to whatever zone its
+ * firmware was built with the next time it is reflashed. */
+static void load_tz(void)
+{
+    nvs_handle_t h;
+    s_tz[0] = '\0';
+
+    if (nvs_open("spa", NVS_READONLY, &h) == ESP_OK) {
+        size_t len = sizeof(s_tz);
+        if (nvs_get_str(h, "tz", s_tz, &len) != ESP_OK) {
+            s_tz[0] = '\0';
+        }
+        nvs_close(h);
+    }
+    if (s_tz[0] == '\0' && CONFIG_SPA_HMI_TZ[0] != '\0') {
+        strlcpy(s_tz, CONFIG_SPA_HMI_TZ, sizeof(s_tz));
+        ESP_LOGI(TAG, "no stored timezone — using the built-in %s", s_tz);
+    }
+    if (s_tz[0] != '\0') {
+        setenv("TZ", s_tz, 1);
+        tzset();
+    } else {
+        ESP_LOGW(TAG, "no timezone set — the clock stays --:-- until one arrives");
+    }
+}
+
+void net_link_set_tz(const char *posix_tz)
+{
+    char next[sizeof(s_tz)];
+    next[0] = '\0';
+    if (posix_tz) {
+        strlcpy(next, posix_tz, sizeof(next));
+    }
+    if (strcmp(next, s_tz) == 0) {
+        return;                     /* the app re-sends it on every wizard run */
+    }
+    strlcpy(s_tz, next, sizeof(s_tz));
+
+    nvs_handle_t h;
+    if (nvs_open("spa", NVS_READWRITE, &h) == ESP_OK) {
+        if (s_tz[0]) {
+            nvs_set_str(h, "tz", s_tz);
+        } else {
+            nvs_erase_key(h, "tz");
+        }
+        nvs_commit(h);
+        nvs_close(h);
+    } else {
+        ESP_LOGW(TAG, "could not store the timezone — it will not survive a reboot");
+    }
+
+    if (s_tz[0]) {
+        setenv("TZ", s_tz, 1);
+        tzset();
+        time_t raw = time(NULL);
+        struct tm tm;
+        localtime_r(&raw, &tm);
+        /* Say what the panel now believes, not merely that it was told: a clock
+         * out by a whole timezone looks exactly like a correct one. */
+        ESP_LOGI(TAG, "timezone set to %s — local time now %04d-%02d-%02d %02d:%02d",
+                 s_tz, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                 tm.tm_hour, tm.tm_min);
+        start_sntp();
+    } else {
+        unsetenv("TZ");
+        tzset();
+        ESP_LOGW(TAG, "timezone cleared — the clock goes back to --:--");
+    }
+}
+
 static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base; (void)id;
@@ -167,22 +260,7 @@ static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
         }
     }
 
-    /* The clock the header has been drawing as "--:--" since this panel was
-     * first flashed. It stays "--:--" unless a timezone has been set, because
-     * UTC on a wall panel is a wrong time, and docs/HMI.md is explicit that a
-     * wrong time is worse than no time. */
-    if (CONFIG_SPA_HMI_TZ[0] != '\0') {
-        setenv("TZ", CONFIG_SPA_HMI_TZ, 1);
-        tzset();
-        esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-        cfg.wait_for_sync = false;     /* never block an event handler */
-        cfg.start = true;
-        if (esp_netif_sntp_init(&cfg) == ESP_OK) {
-            ESP_LOGI(TAG, "sntp started, TZ=%s", CONFIG_SPA_HMI_TZ);
-        }
-    } else {
-        ESP_LOGW(TAG, "no CONFIG_SPA_HMI_TZ — the clock stays --:--");
-    }
+    start_sntp();
 }
 
 /* A blocking scan. Only ever called from net_task before it exits, never from
@@ -299,6 +377,8 @@ static void net_task(void *arg)
     }
     xEventGroupSetBits(s_events, EV_HOSTED_UP);
 
+    load_tz();
+
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
@@ -399,6 +479,8 @@ void net_link_start(void)
 void net_link_start(void)       { }
 bool net_link_up(void)          { return false; }
 int  net_link_scan(net_scan_cb_t cb, void *ctx) { (void)cb; (void)ctx; return -1; }
+void net_link_set_tz(const char *posix_tz) { (void)posix_tz; }
+const char *net_link_tz(void) { return ""; }
 bool net_link_wait_hosted(uint32_t timeout_ms) { (void)timeout_ms; return false; }
 void net_link_provision(const char *ssid, const char *pass,
                         net_prov_cb_t cb, void *ctx)

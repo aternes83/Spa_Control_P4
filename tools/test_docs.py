@@ -173,8 +173,23 @@ def main():
 
     # Commands accepted, and replies emitted.
     accepts = set(re.findall(r'GetObjectItemCaseSensitive\(root, "([a-z_]+)"\)', ble_c))
-    for k in ("wifi_scan", "wifi_ssid", "broker_get"):
+    for k in ("wifi_scan", "wifi_ssid", "broker_get", "tz"):
         check("accepts %s" % k, k in accepts)
+
+    # The timezone must be a POSIX TZ string, never an IANA name: newlib on the
+    # ESP32 has no timezone database and would take "America/New_York" without
+    # complaint, then ignore it. The app is the side that converts, so the two
+    # documents have to agree that it converts.
+    check("docs/BLE.md says POSIX, not IANA",
+          "POSIX TZ string" in ble_md and "IANA" in ble_md)
+    check("the app converts rather than sending an identifier",
+          "SpaTimeZone" in ble_md)
+
+    # A command without tz must not wipe a stored one - an older app build would
+    # otherwise silently un-set a correct timezone every time it provisioned.
+    prov = ble_c[ble_c.find("case JOB_PROVISION:"):ble_c.find("case JOB_TZ:")]
+    check("provisioning without a timezone leaves the stored one alone",
+          "if (job.tz[0])" in prov)
 
     for frag in ('{\\"scan\\":\\"begin\\"}', '{\\"scan\\":\\"end\\"}',
                  '{\\"wifi\\":\\"connecting\\"}'):

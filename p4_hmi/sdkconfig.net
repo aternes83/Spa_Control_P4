@@ -31,13 +31,15 @@ CONFIG_BT_NIMBLE_TRANSPORT_UART=n
 CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=y
 CONFIG_ESP_HOSTED_NIMBLE_HCI_VHCI=y
 
-# The timezone IS set here, unlike the credentials below. It is not a secret, and
-# the Kconfig default is empty on purpose — an unset zone keeps the clock at
-# "--:--" rather than showing UTC, because a wrong time on a wall panel is worse
-# than no time. Leaving it unset here too would mean every clean rebuild quietly
-# lost the clock. Change it for a tub anywhere else; the forms are listed in the
-# Kconfig help.
-CONFIG_SPA_HMI_TZ="EST5EDT,M3.2.0,M11.1.0"
+# CONFIG_SPA_HMI_TZ is deliberately NOT set. The timezone arrives from the phone
+# during BLE provisioning and is stored per board in NVS, because it is a fact
+# about where a tub was installed rather than about the firmware — and a value
+# compiled in here would mean rebuilding to install the same board somewhere
+# else. See docs/BLE.md.
+#
+# The Kconfig option remains as a fallback for a bench board that will never meet
+# the app. Setting it does not override a provisioned zone: the stored one wins,
+# so reflashing a tub in Denver does not move it back to wherever it was built.
 
 # Credentials and broker are deliberately NOT set here. Put them in
 # your local sdkconfig via menuconfig (it is gitignored) so no secret is ever

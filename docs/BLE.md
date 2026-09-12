@@ -50,8 +50,33 @@ a single scan result is about twice that.
 | message | means |
 |---|---|
 | `{"wifi_scan":1}` | scan for networks |
-| `{"wifi_ssid":"...","wifi_pw":"..."}` | try these credentials |
+| `{"wifi_ssid":"...","wifi_pw":"...","tz":"..."}` | try these credentials, and this is where the tub is |
+| `{"tz":"..."}` | just the timezone |
 | `{"broker_get":1}` | send me your MQTT settings |
+
+### The timezone
+
+`tz` is a **POSIX TZ string** — `EST5EDT,M3.2.0,M11.1.0` — not an IANA name.
+That is not a preference: newlib on the ESP32 carries no timezone database, and
+it would accept `America/New_York` without complaint and then ignore it, leaving
+a clock that is confidently wrong. `SpaTimeZone.swift` in the app derives the
+POSIX form from Foundation's own transition data, so any zone iOS knows about
+works, including southern-hemisphere DST, half-hour offsets and zones with no
+DST at all.
+
+**It belongs to the tub, not to the app or the build.** Whoever runs the wizard
+is standing next to the spa, so the phone is the only thing that reliably knows
+where that spa is; two tubs on different sites keep their own. The value is
+stored in NVS and survives a reflash of the application, which is what stops a
+board reverting to whatever zone its firmware happened to be built with.
+
+Sent with the credentials so SNTP has a zone the moment the lease lands, and
+accepted on its own so a tub that has moved does not need its WiFi password
+typed again. A command that omits `tz` leaves whatever the tub already had — an
+older app build must not silently wipe a correct setting.
+
+`CONFIG_SPA_HMI_TZ` remains as a fallback for a bench board that will never meet
+the app. A provisioned zone always wins over it.
 
 ## Panel → app
 
@@ -77,6 +102,8 @@ A provisioning attempt reports its outcome:
 {"wifi":"ok","ip":"192.168.1.42"}
 {"wifi":"fail","err":"wrong password"}
 ```
+
+A standalone timezone is acknowledged with `{"tz":"ok"}`.
 
 `err` is written for somebody standing at the tub, not for a log: *wrong
 password*, *network not found*, *network too weak here*, *the router refused the

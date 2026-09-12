@@ -50,12 +50,13 @@ static QueueHandle_t s_work;
 
 /* What the worker has been asked to do. Kept small and copied by value: the
  * queue is the boundary between the BLE stack and anything that blocks. */
-typedef enum { JOB_SCAN, JOB_PROVISION, JOB_BROKER } job_kind_t;
+typedef enum { JOB_SCAN, JOB_PROVISION, JOB_BROKER, JOB_TZ } job_kind_t;
 
 typedef struct {
     job_kind_t kind;
     char ssid[33];
     char pass[65];
+    char tz[64];        /* POSIX form, from the phone; "" if it sent none */
 } job_t;
 
 bool ble_prov_connected(void) { return s_conn != BLE_HS_CONN_HANDLE_NONE; }
@@ -229,7 +230,21 @@ static void worker(void *arg)
 
         case JOB_PROVISION:
             ESP_LOGI(TAG, "provisioning onto \"%s\"", job.ssid);
+            /* Before associating, so SNTP has a zone the moment the lease
+             * lands rather than a second sync later. A phone that sends no
+             * timezone leaves whatever the tub already had — an older app
+             * build must not wipe a correct setting. */
+            if (job.tz[0]) {
+                net_link_set_tz(job.tz);
+            }
             net_link_provision(job.ssid, job.pass, on_prov_state, NULL);
+            break;
+
+        case JOB_TZ:
+            /* On its own, so moving a tub — or a phone crossing into DST —
+             * does not mean re-entering the WiFi password. */
+            net_link_set_tz(job.tz);
+            notify_json("{\"tz\":\"ok\"}");
             break;
 
         case JOB_BROKER:
@@ -256,6 +271,10 @@ static void handle_command(const char *data, uint16_t len)
     memset(&job, 0, sizeof(job));
     bool have = false;
 
+    /* Carried alongside the credentials, and accepted on its own. The phone is
+     * the only thing that reliably knows where this tub is. */
+    const cJSON *tz = cJSON_GetObjectItemCaseSensitive(root, "tz");
+
     const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(root, "wifi_ssid");
     if (cJSON_IsString(ssid) && ssid->valuestring) {
         const cJSON *pw = cJSON_GetObjectItemCaseSensitive(root, "wifi_pw");
@@ -264,6 +283,13 @@ static void handle_command(const char *data, uint16_t len)
         if (cJSON_IsString(pw) && pw->valuestring) {
             strlcpy(job.pass, pw->valuestring, sizeof(job.pass));
         }
+        if (cJSON_IsString(tz) && tz->valuestring) {
+            strlcpy(job.tz, tz->valuestring, sizeof(job.tz));
+        }
+        have = true;
+    } else if (cJSON_IsString(tz) && tz->valuestring) {
+        job.kind = JOB_TZ;
+        strlcpy(job.tz, tz->valuestring, sizeof(job.tz));
         have = true;
     } else if (cJSON_GetObjectItemCaseSensitive(root, "wifi_scan")) {
         job.kind = JOB_SCAN;

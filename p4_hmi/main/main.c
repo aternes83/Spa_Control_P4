@@ -112,7 +112,13 @@ static void update_clock(void)
     time_t raw = time(NULL);
     struct tm tm;
     localtime_r(&raw, &tm);
-    if (tm.tm_year + 1900 < 2024) {
+    /* Two separate questions, and getting them confused put 20:36 GMT on a panel
+     * standing in a 16:36 EDT garden. A valid clock is not the same as a known
+     * timezone: the RTC keeps running across a reflash, so the time can be
+     * perfectly correct while nothing yet knows how to render it locally. Show
+     * nothing until both are true — a wrong time is worse than no time, and an
+     * hours-out clock looks exactly like a right one. */
+    if (tm.tm_year + 1900 < 2024 || net_link_tz()[0] == '\0') {
         ui_set_clock(-1, 0);
     } else {
         static bool announced;
