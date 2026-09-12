@@ -127,7 +127,9 @@ class SpaController:
         self.max_safe_temp_f = 105.0
         self.flow_prove_ms = 5_000
         self.pump_preheat_ms = 5_000
-        self.default_run_ms = 4 * 60 * 60 * 1000   # 4-hour ceiling; resets on any HMI press
+        # 4-hour ceiling on a single spa-enable session, reset when the enable
+        # command drops. Set to None for no ceiling — see the note in step().
+        self.default_run_ms = 4 * 60 * 60 * 1000
         self.light_run_ms = 60 * 60 * 1000         # 60-minute light runtime
 
         # Status/fault outputs
@@ -154,7 +156,7 @@ class SpaController:
 
     # ── Timer introspection, for MSG_TIMERS ──────────────────────────────────
     def spa_remaining_s(self):
-        if self._run_timer_start_ms is None:
+        if self._run_timer_start_ms is None or self.default_run_ms is None:
             return 0
         left = self.default_run_ms - ticks_diff(ticks_ms(), self._run_timer_start_ms)
         return max(0, left // 1000)
@@ -181,10 +183,17 @@ class SpaController:
         r_water_temp_f = float(inputs.get("rWaterTemp_F", 70.0))
 
         now = ticks_ms()
+        # The ceiling exists so a tub left enabled does not run forever unwatched.
+        # It only resets when the enable command drops, so a controller whose
+        # enable is held continuously will hit it. default_run_ms = None removes
+        # it, for an installation where something else already guarantees that
+        # enable cannot be held by an absent or broken operator — see the note in
+        # s3_control/main.py. Leave it set for a wired panel switch.
         if x_spa_enable_cmd:
             if self._run_timer_start_ms is None:
                 self._run_timer_start_ms = now
-            run_expired = ticks_diff(now, self._run_timer_start_ms) >= self.default_run_ms
+            run_expired = (self.default_run_ms is not None and
+                           ticks_diff(now, self._run_timer_start_ms) >= self.default_run_ms)
         else:
             self._run_timer_start_ms = None
             run_expired = False

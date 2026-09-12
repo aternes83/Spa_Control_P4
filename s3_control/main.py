@@ -98,6 +98,24 @@ def main():
     ctrl = SpaController()
     ctrl.temp_setpoint_f = float(cfg.get("setpoint_f", ctrl.temp_setpoint_f))
 
+    # No ceiling on a spa-enable session. The P4 is the only control surface and
+    # has no off switch, so it asserts xSpaEnable from boot and never withdraws
+    # it; with the ceiling in place the permissive would close four hours later
+    # and every control on the panel would go dead with no way to recover from
+    # the screen.
+    #
+    # What the ceiling was protecting against is still covered, and better. It
+    # guarded a tub left enabled by someone who walked away — but here enable
+    # comes from a board, not a person, and the moment that board stops talking
+    # the link failsafe drops enable along with every other request, inside
+    # 1.5 s, whether the HMI crashed, was unplugged or is being reflashed. That
+    # is a guard nobody has to remember. The thermostat is unaffected either way:
+    # it runs under the freeze permissive, which never consulted this timer.
+    #
+    # Put the ceiling back if a wired panel switch is ever fitted in parallel,
+    # because then a person can hold enable and the failsafe cannot.
+    ctrl.default_run_ms = None
+
     ins, outs = _init_io()
     sensor = NTCSensor(bp.SENSOR_PINS["NTC_ADC"], cfg.get("ntc_cal", NTC_DEFAULT_CAL))
     session = _open_link()

@@ -154,6 +154,25 @@ def safety_properties():
     check("run timer expiry stops the jets", not out["xJets"])
     check("run timer expiry does not stop freeze heating", out["xHeater"])
 
+    # The ceiling can be removed for an installation whose enable comes from the
+    # HMI board rather than a person — the P4 holds it continuously, and the link
+    # failsafe is what drops it. Removing it must not touch anything else.
+    c = spa_core.SpaController()
+    c.default_run_ms = None
+    d = dict(BASE, rWaterTemp_F=45.0, xJetsRequest=True)
+    run(c, clock, d, 10000)
+    clock.advance(50 * 60 * 60 * 1000)
+    out = run(c, clock, d, 1000)
+    check("with no ceiling the jets keep running past four hours", out["xJets"])
+    check("and nothing else changes: the interlocks still hold",
+          out["xHeater"] and not out["xPump1_High"])
+    check("a removed ceiling reports no time remaining, not a negative one",
+          c.spa_remaining_s() == 0, c.spa_remaining_s())
+    d = dict(d, xRemoteEStopOK=False)
+    out = run(c, clock, d, 1000)
+    check("and an e-stop still stops everything with no ceiling",
+          not out["xJets"] and not out["xHeater"] and out["xFault"])
+
     # Pump 1 speeds are interlocked — never both energised.
     c = spa_core.SpaController()
     d = dict(BASE, xPumpRequest=True, xPump1HighRequest=True)
