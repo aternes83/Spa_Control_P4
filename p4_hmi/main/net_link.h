@@ -56,6 +56,12 @@ const char *net_link_ip(void);
  * else that needs the C6 (the BLE controller, say) waits here instead. */
 bool net_link_wait_hosted(uint32_t timeout_ms);
 
+/* Block until this board holds an address, or the timeout expires. Anything
+ * that opens a socket must wait here first: lwIP is initialised on net_link's
+ * own task, and touching the TCP/IP stack before that asserts "Invalid mbox"
+ * and panics, rather than failing in any way a caller could handle. */
+bool net_link_wait_ip(uint32_t timeout_ms);
+
 /* One scan, blocking, cb per network found. Called from the provisioner's own
  * worker task — never from a BLE callback, which must not block. Returns the
  * number reported, or -1 if the radio is not up yet. */

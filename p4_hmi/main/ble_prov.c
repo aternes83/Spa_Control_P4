@@ -84,9 +84,14 @@ static void notify_json(const char *json)
         }
         struct os_mbuf *om = ble_hs_mbuf_from_flat(json + off, n);
         if (!om) {
+            ESP_LOGW(TAG, "out of mbufs — reply dropped: %s", json);
             return;
         }
-        if (ble_gatts_notify_custom(s_conn, s_tx_handle, om) != 0) {
+        int rc = ble_gatts_notify_custom(s_conn, s_tx_handle, om);
+        if (rc != 0) {
+            /* Silence here is the worst outcome: the phone sits waiting for a
+             * reply that was never sent, and nothing anywhere says so. */
+            ESP_LOGW(TAG, "notify failed (rc %d) — the phone will not see: %s", rc, json);
             return;         /* the mbuf is consumed either way */
         }
     }
@@ -150,6 +155,17 @@ static void on_prov_state(void *ctx, net_prov_state_t st, const char *detail)
  * panel uses, instead of making somebody type a host and port twice. */
 static void send_broker(void)
 {
+    /* Say nothing rather than something false. An empty host is not broker
+     * settings, and the app saves whatever arrives — so replying with a blank
+     * object overwrites a broker the user may already have working. Its wizard
+     * anticipates exactly this ("Fallback so Done isn't blocked if the board
+     * reports no broker") and finishes on a timer instead. */
+    if (CONFIG_SPA_HMI_MQTT_URI[0] == '\0') {
+        ESP_LOGW(TAG, "no broker configured — telling the phone nothing rather "
+                      "than an empty one, which it would save over a good one");
+        return;
+    }
+
     cJSON *b = cJSON_CreateObject();
     if (!b) {
         return;
@@ -196,6 +212,7 @@ static void send_broker(void)
         cJSON_AddItemToObject(root, "broker", b);
         char *txt = cJSON_PrintUnformatted(root);
         if (txt) {
+            ESP_LOGI(TAG, "sending broker settings: %s", txt);
             notify_json(txt);
             cJSON_free(txt);
         }
@@ -220,6 +237,7 @@ static void worker(void *arg)
         }
         switch (job.kind) {
         case JOB_SCAN:
+            ESP_LOGI(TAG, "phone asked for a network scan");
             notify_json("{\"scan\":\"begin\"}");
             net_link_scan(on_network, NULL);
             /* "end" goes out even when the scan failed or found nothing: the
@@ -248,6 +266,7 @@ static void worker(void *arg)
             break;
 
         case JOB_BROKER:
+            ESP_LOGI(TAG, "phone asked for the broker settings");
             send_broker();
             break;
         }
@@ -265,6 +284,23 @@ static void handle_command(const char *data, uint16_t len)
     if (!root) {
         ESP_LOGW(TAG, "unparseable command, ignored");
         return;
+    }
+    /* Not the payload: it carries the WiFi password. The key names are enough
+     * to follow a wizard run without printing somebody's secret to a console. */
+    {
+        const cJSON *it = NULL;
+        char keys[96];
+        size_t k = 0;
+        cJSON_ArrayForEach(it, root) {
+            if (it->string) {
+                int w = snprintf(keys + k, sizeof(keys) - k, "%s%s", k ? "," : "", it->string);
+                if (w < 0 || (size_t)w >= sizeof(keys) - k) {
+                    break;
+                }
+                k += (size_t)w;
+            }
+        }
+        ESP_LOGI(TAG, "command from phone: {%s}", keys);
     }
 
     job_t job;

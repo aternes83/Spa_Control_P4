@@ -36,9 +36,11 @@ static uint32_t s_backoff_ms = RETRY_MIN_MS;
 static esp_timer_handle_t s_retry;
 static EventGroupHandle_t s_events;
 #define EV_HOSTED_UP  BIT0
+#define EV_GOT_IP     BIT1
 static bool          s_started;        /* esp_wifi_start() has returned */
 static bool          s_prov_active;    /* an attempt is outstanding */
 static bool          s_sntp_running;
+static bool          s_self_disconnect;  /* we asked for it; not a failure */
 static char          s_tz[64];
 static net_prov_cb_t s_prov_cb;
 static void         *s_prov_ctx;
@@ -52,6 +54,15 @@ bool net_link_wait_hosted(uint32_t timeout_ms)
     }
     return (xEventGroupWaitBits(s_events, EV_HOSTED_UP, pdFALSE, pdTRUE,
                                 pdMS_TO_TICKS(timeout_ms)) & EV_HOSTED_UP) != 0;
+}
+
+bool net_link_wait_ip(uint32_t timeout_ms)
+{
+    if (!s_events) {
+        return false;
+    }
+    return (xEventGroupWaitBits(s_events, EV_GOT_IP, pdFALSE, pdTRUE,
+                                pdMS_TO_TICKS(timeout_ms)) & EV_GOT_IP) != 0;
 }
 bool net_link_provisioned(void) { return s_provisioned; }
 const char *net_link_ip(void)   { return s_ip; }
@@ -110,6 +121,20 @@ static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
         const wifi_event_sta_disconnected_t *d = data;
         s_up = false;
         strcpy(s_ip, "-");
+
+        if (s_self_disconnect) {
+            /* Ours, and the whole point of it: the new credentials could not be
+             * tried until the old association was gone. Now it is. */
+            s_self_disconnect = false;
+            ESP_LOGI(TAG, "left the previous network — trying the new one");
+            if (esp_wifi_connect() != ESP_OK && s_prov_active) {
+                s_prov_active = false;
+                if (s_prov_cb) {
+                    s_prov_cb(s_prov_ctx, NET_PROV_FAILED, "the radio refused to connect");
+                }
+            }
+            break;
+        }
         /* The reason code is the whole diagnosis here — 15 is a bad password,
          * 201 is an SSID that isn't there, and telling those apart from the
          * console saves taking the panel off the wall. */
@@ -250,6 +275,7 @@ static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
     snprintf(s_ip, sizeof(s_ip), IPSTR, IP2STR(&e->ip_info.ip));
     s_backoff_ms = RETRY_MIN_MS;
     s_up = true;
+    xEventGroupSetBits(s_events, EV_GOT_IP);
     ESP_LOGI(TAG, "up, address %s", s_ip);
 
     if (s_prov_active) {
@@ -345,7 +371,33 @@ void net_link_provision(const char *ssid, const char *pass,
         cb(ctx, NET_PROV_CONNECTING, NULL);
     }
 
-    esp_wifi_disconnect();      /* drop any earlier association first */
+    /* If this board is already on a network — which it is on every attempt
+     * after the first, and on the first attempt of any re-provisioning — the
+     * old association has to be dropped before the new credentials can be
+     * tried. esp_wifi_disconnect() is ASYNCHRONOUS, and the disconnect it
+     * causes arrives at the same handler that reports provisioning failures.
+     *
+     * That is what made the wizard fail on the first go and work on "retry":
+     * the panel was reporting its own deliberate disconnect to the phone as
+     * "the router refused the connection", while the association it then made
+     * quietly succeeded with nobody listening. Second time round the board was
+     * already disconnected, no spurious event fired, and it looked fine.
+     *
+     * So the disconnect is flagged as ours and the real attempt begins in the
+     * handler, once the old association has actually gone. */
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        s_self_disconnect = true;
+        if (esp_wifi_disconnect() != ESP_OK) {
+            s_self_disconnect = false;
+            s_prov_active = false;
+            if (cb) {
+                cb(ctx, NET_PROV_FAILED, "could not leave the current network");
+            }
+        }
+        return;
+    }
+
     if (esp_wifi_connect() != ESP_OK) {
         s_prov_active = false;
         if (cb) {
@@ -482,6 +534,7 @@ int  net_link_scan(net_scan_cb_t cb, void *ctx) { (void)cb; (void)ctx; return -1
 void net_link_set_tz(const char *posix_tz) { (void)posix_tz; }
 const char *net_link_tz(void) { return ""; }
 bool net_link_wait_hosted(uint32_t timeout_ms) { (void)timeout_ms; return false; }
+bool net_link_wait_ip(uint32_t timeout_ms) { (void)timeout_ms; return false; }
 void net_link_provision(const char *ssid, const char *pass,
                         net_prov_cb_t cb, void *ctx)
 {

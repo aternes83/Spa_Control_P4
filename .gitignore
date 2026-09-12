@@ -1,6 +1,8 @@
 # ESP-IDF
 p4_hmi/build/
 p4_hmi/sdkconfig
+# Broker password lives here. Never commit it.
+p4_hmi/sdkconfig.local
 p4_hmi/sdkconfig.old
 p4_hmi/managed_components/
 p4_hmi/dependencies.lock

@@ -1,9 +1,17 @@
 # MQTT — the app's contract
 
-**Status: steps 1-3 implemented, untested against a real broker.** The radio and
-the client are written and on the board; what has not happened is an association
-with a password or a publish to a broker, because both need credentials this
-repository deliberately does not carry.
+**Status: steps 1-4 working on hardware, end to end.** The panel provisions over
+BLE from the app, joins WiFi, learns its timezone, and publishes to a real broker
+over TLS. Verified by subscribing to it:
+
+```
+3 status messages received on spa/spa1/status
+  id spa1   temp_f 0.0   setpoint 0.0   heater false   pump1 0
+  light false   eco false   max_jet false   fault false   fw p4-1.0   link false
+```
+
+The zeros are correct rather than a bug: no S3 is wired to this panel yet, so
+there is no plant to report. That is exactly what `link: false` is for.
 
 This file was written before the code so the two ends could not drift, and it
 stays the specification rather than a description: the SpaControl iOS app already
@@ -15,8 +23,8 @@ camelCase.
 | step | state |
 |---|---|
 | 1. `esp_wifi_remote` associates through the C6 | **verified on hardware** |
-| 2. `spa/status` published | written, needs a broker |
-| 3. `spa/commands` honoured | written, needs a broker |
+| 2. `spa/status` published | **verified against a live broker** |
+| 3. `spa/commands` honoured | subscribed; untested until an S3 is wired |
 | 4. BLE provisioning | **advertising on hardware**, see `docs/BLE.md` |
 | 5. OTA relay, then `set_temp_cal` | not written |
 
@@ -189,6 +197,25 @@ OTA cannot change, so getting it wrong means a wired reflash of every board.
 Most of that growth is mbedTLS, arriving with `mqtts://` support. It is the last
 thing worth dropping to save space — the alternative puts the broker password in
 clear text on the wire.
+
+## Two sequencing bugs worth remembering
+
+**esp-mqtt must not be started before lwIP exists.** It tolerates having no
+address — it retries by itself — but not an uninitialised TCP/IP stack, and lwIP
+comes up on net_link's task long after `app_main` has run. Calling
+`esp_mqtt_client_start()` from `app_main` panics with
+
+```
+assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)
+```
+
+and boot-loops the panel. This hid for as long as no broker was configured,
+because then `mqtt_spa_start()` returned early and never reached `start()` at
+all — the bug arrived with the first working broker URI. The client is created in
+`app_main` and started from a task that waits on `net_link_wait_ip()`.
+
+**TLS needs a trust anchor.** `mqtts://` without `crt_bundle_attach` fails at the
+handshake. IDF's bundled roots cover the public CAs that hosted brokers use.
 
 **A note on reading the build.** With an empty `CONFIG_SPA_HMI_MQTT_URI` the
 literal `""[0] == '\0'` folds at compile time, `-O3` proves `mqtt_spa_start()`

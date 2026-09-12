@@ -8,8 +8,12 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "net_link.h"
 #include "spalink_codec.h"
 
 static const char *TAG = "mqtt";
@@ -208,6 +212,19 @@ static void on_mqtt(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+static void start_when_ready(void *arg)
+{
+    (void)arg;
+    /* No timeout: a tub can sit for hours with the router off, and the right
+     * behaviour is to connect whenever the network finally appears. */
+    while (!net_link_wait_ip(30000)) {
+        ESP_LOGD(TAG, "waiting for an address before opening the broker socket");
+    }
+    ESP_LOGI(TAG, "network up — connecting to the broker");
+    esp_mqtt_client_start(s_client);
+    vTaskDelete(NULL);
+}
+
 void mqtt_spa_start(void)
 {
     if (CONFIG_SPA_HMI_MQTT_URI[0] == '\0') {
@@ -226,8 +243,15 @@ void mqtt_spa_start(void)
         snprintf(s_topic_cmd, sizeof(s_topic_cmd), "spa/commands");
     }
 
+    /* mqtts:// needs a trust anchor or the handshake fails with nothing useful
+     * to show for it. IDF's bundled roots cover the public CAs that hosted
+     * brokers use, which is the whole reason TLS is affordable here. */
+    const bool tls = (strncmp(CONFIG_SPA_HMI_MQTT_URI, "mqtts://", 8) == 0) ||
+                     (strncmp(CONFIG_SPA_HMI_MQTT_URI, "wss://", 6) == 0);
+
     const esp_mqtt_client_config_t cfg = {
         .broker.address.uri = CONFIG_SPA_HMI_MQTT_URI,
+        .broker.verification.crt_bundle_attach = tls ? esp_crt_bundle_attach : NULL,
         .credentials.username = CONFIG_SPA_HMI_MQTT_USER,
         .credentials.authentication.password = CONFIG_SPA_HMI_MQTT_PASS,
         .session.keepalive = 30,
@@ -242,9 +266,16 @@ void mqtt_spa_start(void)
         return;
     }
     esp_mqtt_client_register_event(s_client, ESP_EVENT_ANY_ID, on_mqtt, NULL);
-    /* esp-mqtt reconnects by itself and tolerates being started before there is
-     * an address, so there is nothing to sequence against the radio here. */
-    esp_mqtt_client_start(s_client);
+
+    /* Starting the client is what must wait, not creating it.
+     *
+     * esp-mqtt does tolerate having no address — it retries on its own — but it
+     * does NOT tolerate an uninitialised TCP/IP stack, and lwIP comes up on
+     * net_link's task well after app_main has run. Calling start() here directly
+     * panics with "assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)"
+     * and boot-loops the panel. That stayed hidden for as long as no broker was
+     * configured, because then start() was never reached at all. */
+    xTaskCreate(start_when_ready, "mqtt_up", 3072, NULL, 4, NULL);
 }
 
 #else  /* !CONFIG_SPA_HMI_MQTT */
