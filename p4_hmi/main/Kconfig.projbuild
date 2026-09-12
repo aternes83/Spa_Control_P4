@@ -120,4 +120,24 @@ config SPA_HMI_MQTT_FW
     depends on SPA_HMI_MQTT
     default "p4-1.0"
 
+config SPA_HMI_BLE_PROV
+    bool "Provision WiFi over BLE, as the app expects"
+    depends on SPA_HMI_NET
+    default n
+    help
+        Advertises as "SpaControl" and serves the Nordic UART Service that
+        SpaBLEProvisioner in the iOS app drives: scan for networks, take
+        credentials, report the result, and hand back the broker settings so the
+        app can configure itself. See docs/BLE.md for the wire protocol.
+
+        This is what unties a board from the network it was flashed beside. With
+        it on, CONFIG_SPA_HMI_WIFI_SSID stops being needed at all.
+
+        Note this is NOT ESP-IDF's wifi_provisioning component. The app does not
+        speak protocomm, and a board using it would be invisible to the wizard.
+
+        The BLE controller runs on the C6 over the same SDIO bus as WiFi, so the
+        C6 still needs no new firmware. The NimBLE host costs about 200 KB of
+        flash, which is why this is separate from CONFIG_SPA_HMI_NET.
+
 endmenu

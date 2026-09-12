@@ -235,9 +235,10 @@ an actual address — see `docs/MQTT.md`. It lights only once there is a lease, 
 on association: an association without an address carries nothing, and showing it
 as up would be the same kind of lie as a tile lighting for a dead relay.
 
-**Bluetooth is not.** The indicator is still hard-wired false. The C6's image
-does advertise `HCI over SDIO`, so the transport exists, but nothing on this
-board uses BLE until the provisioner is written.
+**Bluetooth is now real too.** The indicator follows an actual phone connection
+to the provisioning service (`docs/BLE.md`). It shows a *connected phone*, not
+merely that the radio exists — an indicator lit for a stack nobody is talking to
+would say nothing worth the pixels.
 
 **The clock** now keeps real time over SNTP — but only once `CONFIG_SPA_HMI_TZ`
 is set. Left empty it stays `--:--`, deliberately: the alternative is UTC on a

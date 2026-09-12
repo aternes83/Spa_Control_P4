@@ -17,7 +17,7 @@ camelCase.
 | 1. `esp_wifi_remote` associates through the C6 | **verified on hardware** |
 | 2. `spa/status` published | written, needs a broker |
 | 3. `spa/commands` honoured | written, needs a broker |
-| 4. BLE provisioning | not written |
+| 4. BLE provisioning | **advertising on hardware**, see `docs/BLE.md` |
 | 5. OTA relay, then `set_temp_cal` | not written |
 
 ## Where it runs, and why not on the C6
@@ -206,8 +206,10 @@ riscv32-esp-elf-nm build/esp-idf/main/CMakeFiles/__idf_main.dir/mqtt_spa.c.obj |
    associates and gets an address before any MQTT.
 2. `esp-mqtt` publishing `spa/status` from `spa_state_t` + `ui_intent_t`.
 3. `spa/commands` into `ui_intent_t`, through the mode helpers.
-4. BLE provisioning to match `SpaBLEProvisioner` in the app, so a board is never
-   tied to one network at flash time.
+4. ~~BLE provisioning to match `SpaBLEProvisioner` in the app.~~ Written and
+   advertising — `docs/BLE.md`. It is **not** IDF's `wifi_provisioning`: the app
+   speaks a Nordic UART Service carrying JSON, and a protocomm board would be
+   invisible to the wizard.
 5. OTA relay, and then `set_temp_cal` once SpaLink has a message for it.
 
 Each of 1–3 is independently testable; nothing beyond step 1 is worth writing

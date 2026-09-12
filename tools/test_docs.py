@@ -136,6 +136,59 @@ def main():
           "set_temp_cal" not in consumed or "needs a SpaLink message" in mqtt_c)
 
     print()
+    print("the app's BLE provisioning contract")
+    ble_c = open(os.path.join(ROOT, "p4_hmi", "main", "ble_prov.c")).read()
+    ble_md = open(os.path.join(ROOT, "docs", "BLE.md")).read()
+
+    # The UUIDs are built from a macro in little-endian byte order, because that
+    # is what NimBLE wants. Getting that backwards produces a service no phone
+    # can find, with nothing in any log to say why - so reconstruct the UUID the
+    # firmware will actually advertise and compare it to the documented one.
+    m = re.search(r"BLE_UUID128_INIT\(([^)]*)\)", ble_c, re.S)
+    check("the NUS uuid macro is present", m is not None)
+    if m:
+        parts = [t.replace("\\", " ").strip() for t in m.group(1).split(",")]
+        # b1/b0 are the macro's parameters; the service is 0x00, 0x01.
+        concrete = ["0x01" if t == "b0" else "0x00" if t == "b1" else t for t in parts]
+        try:
+            raw = [int(t, 16) for t in concrete]
+        except ValueError:
+            raw = []
+        check("the uuid macro has 16 bytes", len(raw) == 16, len(raw))
+        if len(raw) == 16:
+            be = raw[::-1]                       # little-endian -> canonical
+            hx = "".join("%02X" % b for b in be)
+            built = "%s-%s-%s-%s-%s" % (hx[0:8], hx[8:12], hx[12:16], hx[16:20], hx[20:32])
+            documented = re.findall(r"`(6E400001-[0-9A-F-]+)`", ble_md)
+            check("the service uuid the firmware builds matches docs/BLE.md",
+                  documented and built == documented[0], built)
+
+    # The app scans with no service filter and matches the advertised local
+    # name. Change this string and the wizard simply never finds the tub.
+    name = re.search(r'#define DEV_NAME "([^"]+)"', ble_c)
+    check("the advertised name is SpaControl",
+          name is not None and name.group(1) == "SpaControl",
+          name.group(1) if name else "missing")
+    check("and docs/BLE.md says the same", name and ("`%s`" % name.group(1)) in ble_md)
+
+    # Commands accepted, and replies emitted.
+    accepts = set(re.findall(r'GetObjectItemCaseSensitive\(root, "([a-z_]+)"\)', ble_c))
+    for k in ("wifi_scan", "wifi_ssid", "broker_get"):
+        check("accepts %s" % k, k in accepts)
+
+    for frag in ('{\\"scan\\":\\"begin\\"}', '{\\"scan\\":\\"end\\"}',
+                 '{\\"wifi\\":\\"connecting\\"}'):
+        check("emits %s" % frag.replace('\\', ''), frag in ble_c)
+
+    # The wizard spins until "end" arrives, so it must be unconditional.
+    scan_body = ble_c[ble_c.find("case JOB_SCAN:"):ble_c.find("case JOB_PROVISION:")]
+    ends = scan_body.count('scan\\":\\"end')
+    before_end = scan_body[:scan_body.find('scan\\":\\"end')]
+    check("the scan is always closed, even when it fails", ends == 1, ends)
+    check("and nothing can leave the scan before closing it",
+          "return" not in before_end and "break" not in before_end)
+
+    print()
     if FAILED:
         print("FAILED: %d" % len(FAILED))
         return 1

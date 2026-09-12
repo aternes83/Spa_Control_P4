@@ -19,6 +19,7 @@
  *   2. When the link is down, everything on screen derived from the S3 is stale.
  *      It is greyed and called out rather than shown as though it were current.
  */
+#include "ble_prov.h"
 #include "bench_peer.h"
 #include "board_pins.h"
 #include "bsp/display.h"
@@ -152,7 +153,7 @@ static void link_task(void *arg)
             ui_out_t out;
             if (bsp_display_lock(50)) {
                 update_clock();
-                ui_set_radio(net_link_up(), false);
+                ui_set_radio(net_link_up(), ble_prov_connected());
                 ui_tick(&s_state, t, &out);
                 bsp_display_unlock();
 
@@ -296,6 +297,7 @@ void app_main(void)
      * plant, and nothing below this line can block the control path. */
     net_link_start();
     mqtt_spa_start();
+    ble_prov_start();
 
     xTaskCreate(link_task, "spa_link", 4096, NULL, 5, NULL);
 }

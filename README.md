@@ -143,8 +143,13 @@ I (3410) transport: Identified slave [esp32c6]
 I (6947) net: radio OK — the C6 answered and found 3 networks
 ```
 
-See `docs/MQTT.md` for the wire contract and what is still missing (BLE
-provisioning, OTA, and `set_temp_cal`, which needs a new SpaLink message).
+With `CONFIG_SPA_HMI_BLE_PROV` the panel also advertises as **SpaControl** and
+serves the app's WiFi-setup wizard, so a board never has to be told a network at
+build time. `docs/BLE.md` has that protocol; note it is deliberately *not*
+ESP-IDF's `wifi_provisioning`, because the app does not speak protocomm.
+
+See `docs/MQTT.md` for the MQTT wire contract and what is still missing (OTA, and
+`set_temp_cal`, which needs a new SpaLink message).
 
 ## Tests
 

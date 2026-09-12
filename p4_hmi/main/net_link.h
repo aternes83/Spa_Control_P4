@@ -20,6 +20,7 @@
 #define NET_LINK_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /* Bring the radio up in the background. Returns immediately and never blocks
  * boot: the panel has to come up and show the tub whether or not there is a
@@ -38,5 +39,44 @@ bool net_link_provisioned(void);
 
 /* Dotted-quad, or "-" when there is no lease. For the diagnostics screen. */
 const char *net_link_ip(void);
+
+/* ── What BLE provisioning needs ─────────────────────────────────────────────
+ *
+ * The radio is brought up and left running even with no credentials, precisely
+ * so these two work before the board has ever been on a network.
+ */
+
+/* Block until the C6's SDIO transport has been negotiated, or the timeout
+ * expires. Returns whether it came up.
+ *
+ * Exactly one place in this firmware may bring that transport up, and it is
+ * net_link. Two tasks calling into it concurrently do not both win and do not
+ * fail cleanly either — the SD card initialisation itself fails, and every
+ * subsequent symptom points at the wiring rather than at the race. Anything
+ * else that needs the C6 (the BLE controller, say) waits here instead. */
+bool net_link_wait_hosted(uint32_t timeout_ms);
+
+/* One scan, blocking, cb per network found. Called from the provisioner's own
+ * worker task — never from a BLE callback, which must not block. Returns the
+ * number reported, or -1 if the radio is not up yet. */
+typedef void (*net_scan_cb_t)(void *ctx, const char *ssid, int rssi, bool secured);
+int net_link_scan(net_scan_cb_t cb, void *ctx);
+
+/* How a provisioning attempt ended. */
+typedef enum {
+    NET_PROV_CONNECTING,
+    NET_PROV_OK,        /* detail is the address */
+    NET_PROV_FAILED,    /* detail is why, in words the app can show a user */
+} net_prov_state_t;
+
+typedef void (*net_prov_cb_t)(void *ctx, net_prov_state_t state, const char *detail);
+
+/* Try these credentials. Returns immediately; the outcome arrives on cb.
+ *
+ * esp_wifi persists to NVS, so a successful attempt is what unties the board
+ * from the network it was flashed next to — which is the entire point of
+ * provisioning, and why CONFIG_SPA_HMI_WIFI_SSID is only ever a bench shortcut. */
+void net_link_provision(const char *ssid, const char *pass,
+                        net_prov_cb_t cb, void *ctx);
 
 #endif /* NET_LINK_H */
