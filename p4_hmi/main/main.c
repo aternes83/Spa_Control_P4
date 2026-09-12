@@ -115,6 +115,16 @@ static void update_clock(void)
     if (tm.tm_year + 1900 < 2024) {
         ui_set_clock(-1, 0);
     } else {
+        static bool announced;
+        if (!announced) {
+            announced = true;
+            /* Once, when SNTP first lands. A clock that is wrong by a whole
+             * timezone looks exactly like a clock that is right, so print what
+             * the panel actually believes rather than only that it synced. */
+            ESP_LOGI(TAG, "clock set: %04d-%02d-%02d %02d:%02d %s",
+                     tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                     tm.tm_hour, tm.tm_min, tzname[tm.tm_isdst > 0 ? 1 : 0]);
+        }
         ui_set_clock(tm.tm_hour, tm.tm_min);
     }
 }

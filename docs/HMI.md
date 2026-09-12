@@ -240,10 +240,27 @@ to the provisioning service (`docs/BLE.md`). It shows a *connected phone*, not
 merely that the radio exists — an indicator lit for a stack nobody is talking to
 would say nothing worth the pixels.
 
-**The clock** now keeps real time over SNTP — but only once `CONFIG_SPA_HMI_TZ`
-is set. Left empty it stays `--:--`, deliberately: the alternative is UTC on a
-wall panel, and a wrong time is worse than no time. The carrier's RTC on the
-shared I²C bus is still undriven; SNTP made it unnecessary for now.
+**The clock** keeps real time over SNTP, confirmed on the glass against a known
+good clock:
+
+```
+I (10485) net: sntp started, TZ=EST5EDT,M3.2.0,M11.1.0
+I (12258) spa_hmi: clock set: 2026-09-12 15:33 EDT
+```
+
+It needs `CONFIG_SPA_HMI_TZ`, and the Kconfig default is empty on purpose: with
+no zone it stays `--:--` rather than showing UTC, because a wrong time on a wall
+panel is worse than no time — and a clock wrong by a whole timezone looks exactly
+like one that is right, which is why the firmware prints what it believes once,
+on the first sync, instead of only saying that it synced.
+
+`sdkconfig.net` sets US Eastern for this tub. It is the one site-specific value
+that is committed rather than left in the gitignored `sdkconfig`: a timezone is
+not a secret, and leaving it out meant every clean rebuild quietly lost the clock.
+
+The carrier's RTC on the shared I²C bus is still undriven; SNTP made it
+unnecessary for now, though it is what would carry the time across a reboot with
+no network.
 
 **Bold** is the other gap. LVGL's stock Montserrat is a single weight, so
 `UI_FONT_*_B` currently resolve to the Medium faces. A bold face has to be
