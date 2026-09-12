@@ -229,12 +229,20 @@ because then a person can hold enable and the failsafe cannot. The default in
 
 ## Not wired yet
 
-The header carries three things this board does not own. The radios live on the
-ESP32-C6 across the SDIO link and that firmware is not written; the clock wants
-NTP through the C6 or the carrier's RTC on the shared I²C bus, and neither is
-driven. So the two indicators render "off" and the clock reads `--:--` rather
-than counting up from the epoch, which would be a wrong time rather than no time.
-`ui_set_radio()` and `ui_set_clock()` are one line of glue each.
+**Wi-Fi is now real.** With `CONFIG_SPA_HMI_NET` the P4 associates through the
+C6 over the module's internal SDIO bus and the header's Wi-Fi indicator follows
+an actual address — see `docs/MQTT.md`. It lights only once there is a lease, not
+on association: an association without an address carries nothing, and showing it
+as up would be the same kind of lie as a tile lighting for a dead relay.
+
+**Bluetooth is not.** The indicator is still hard-wired false. The C6's image
+does advertise `HCI over SDIO`, so the transport exists, but nothing on this
+board uses BLE until the provisioner is written.
+
+**The clock** now keeps real time over SNTP — but only once `CONFIG_SPA_HMI_TZ`
+is set. Left empty it stays `--:--`, deliberately: the alternative is UTC on a
+wall panel, and a wrong time is worse than no time. The carrier's RTC on the
+shared I²C bus is still undriven; SNTP made it unnecessary for now.
 
 **Bold** is the other gap. LVGL's stock Montserrat is a single weight, so
 `UI_FONT_*_B` currently resolve to the Medium faces. A bold face has to be

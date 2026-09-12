@@ -96,6 +96,46 @@ def main():
           "_comment" in json.loads(json.dumps(dict(cfg, setpoint_f=102.0))))
 
     print()
+    print("the app's MQTT wire contract")
+    mqtt_c = open(os.path.join(ROOT, "p4_hmi", "main", "mqtt_spa.c")).read()
+    mqtt_md = open(os.path.join(ROOT, "docs", "MQTT.md")).read()
+
+    # Every JSON key the firmware actually puts on the wire, and every key it
+    # reads back off it.
+    published = set(re.findall(r'\\"([A-Za-z0-9_-]+)\\":', mqtt_c))
+    consumed = set(re.findall(r'GetObjectItemCaseSensitive\(root, "([A-Za-z0-9_-]+)"\)', mqtt_c))
+
+    # docs/MQTT.md is the specification — the app already speaks this protocol,
+    # so the document is not ours to edit to match the code. Any key here that
+    # the document does not list is a key the app will ignore.
+    documented = set(re.findall(r'^\| `([a-z0-9_]+)`', mqtt_md, re.M))
+    documented |= set(re.findall(r'`([a-z0-9_]+)`,? `([a-z0-9_]+)`', mqtt_md) and
+                      [m for pair in re.findall(r'\| `([a-z0-9_]+)`, `([a-z0-9_]+)`', mqtt_md)
+                       for m in pair])
+
+    # "link" is ours, not the app's: deliberately extra, and mqtt_spa.c says why.
+    undocumented = published - documented - {"link"}
+    check("%d published fields are all in docs/MQTT.md" % len(published),
+          not undocumented, sorted(undocumented))
+    undocumented = consumed - documented
+    check("%d accepted commands are all in docs/MQTT.md" % len(consumed),
+          not undocumented, sorted(undocumented))
+
+    # The failure docs/MQTT.md calls "the single easiest way to break this
+    # silently": the app decodes with .convertFromSnakeCase, so a camelCase key
+    # does not error, it decodes as absent and the app shows a stale value.
+    camel = sorted(k for k in published | consumed if k != k.lower() or "-" in k)
+    check("no key is camelCase or hyphenated", not camel, camel)
+
+    # The two fields the S3 cannot report, because this board applies them.
+    for k in ("eco", "max_jet"):
+        check("%s is published (the P4 owns it)" % k, k in published)
+
+    # Commands the firmware must NOT silently pretend to honour.
+    check("set_temp_cal is not quietly accepted",
+          "set_temp_cal" not in consumed or "needs a SpaLink message" in mqtt_c)
+
+    print()
     if FAILED:
         print("FAILED: %d" % len(FAILED))
         return 1

@@ -87,6 +87,32 @@ GT911:      TouchPad_ID:0x39,0x31,0x31  (touch answering on the shared I2C)
 spalink:    link up on uart1 tx=26 rx=27 @115200 (RS485 half-duplex)
 ```
 
+The radio was read off the same board on 2026-09-12:
+
+```
+sdio_wrapper: SDIO master: Slot 1, Data-Lines: 4-bit Freq(KHz)[40000 KHz]
+sdio_wrapper: GPIOs: CLK[18] CMD[19] D0[14] D1[15] D2[16] D3[17] Slave_Reset[54]
+transport:    Identified slave [esp32c6]     Slave chip Id[12]
+transport:       - HCI over SDIO
+boot:         Loaded app from partition at offset 0x20000   (ota_0)
+```
+
+**The C6 needs no new firmware.** Guition's stock `JC-C6-slave_v2.3.2.bin`, as
+shipped in `8-Burn operation/Burn files/`, talks to `esp_hosted` 2.11.7 on the P4
+without modification. That was the open question behind the whole architecture —
+if it had not held, the alternative was writing C6 firmware and a second
+P4-to-C6 protocol beside SpaLink.
+
+**No SDIO pin configuration is needed either.** Every value above is what
+`esp_hosted` chooses by default, and each one matches Guition's own working build
+for this exact carrier — their `xiaozhi` demo in the documentation package, built
+with `CONFIG_BOARD_TYPE_GUITION_JC4880P443=y`. Checked key by key before the
+first build, then confirmed by the log above. Note the SDIO bus never reaches a
+carrier pin: it is internal to the JC-ESP32P4-M3 module.
+
+`HCI over SDIO` in that log is what makes BLE provisioning possible on the stock
+image.
+
 **Silicon revision: v1.3.** This matters more than anything else here. ESP-IDF
 5.5 defaults to requiring **v3.1 or newer**, and Espressif's own Kconfig says the
 pre-3.0 and 3.x parts have *"huge hardware difference"* and are not compatible.

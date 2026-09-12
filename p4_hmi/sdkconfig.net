@@ -1,0 +1,23 @@
+# Overlay that turns the radio and MQTT on. Combine it with the real defaults:
+#
+#   idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.net" build
+#
+# Kept separate because CONFIG_SPA_HMI_NET is off in sdkconfig.defaults on
+# purpose — the shipping panel runs the tub and must not acquire a dependency on
+# a network to do it. This file is how you build the networking variant without
+# editing that decision.
+#
+# No esp_hosted settings here, and that is a finding rather than an omission:
+# every SDIO value the transport needs already matches Guition's own working
+# build for this exact carrier (CONFIG_BOARD_TYPE_GUITION_JC4880P443=y in their
+# xiaozhi demo) by default — CMD 19, CLK 18, D0-D3 14/15/16/17, slave reset 54,
+# slot 1, 4-bit, 40 MHz, slave target esp32c6. Verified key by key, and then
+# confirmed live: the C6 identified itself and scanned on the first boot.
+CONFIG_SPA_HMI_NET=y
+CONFIG_SPA_HMI_MQTT=y
+
+# Credentials, broker and timezone are deliberately NOT set here. Put them in
+# your local sdkconfig via menuconfig (it is gitignored) so no secret is ever
+# committed:
+#   menuconfig -> Spa HMI -> WiFi SSID / WiFi password / Timezone
+#                            Broker URI / username / password / device id

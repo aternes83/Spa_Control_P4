@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
 #include "spalink_port.h"
 #include "ui_dial.h"
 #include "ui_icons.h"
@@ -588,11 +589,66 @@ static void update_topbar(void)
     set_text(s_lbl_clock, clock);
 }
 
+/* Remote commands, waiting for a tick to be applied on. Guarded by a plain
+ * critical section rather than a mutex: the only contention is one short struct
+ * copy, and taking a lock in an MQTT callback to wait on the UI task is how a
+ * network stall becomes a frozen panel. */
+static ui_remote_cmd_t s_pending;
+static bool            s_pending_any;
+static portMUX_TYPE    s_pending_lock = portMUX_INITIALIZER_UNLOCKED;
+
+void ui_post_remote(const ui_remote_cmd_t *cmd)
+{
+    portENTER_CRITICAL(&s_pending_lock);
+    if (!s_pending_any) {
+        s_pending = *cmd;
+        s_pending_any = true;
+    } else {
+        /* Coalesce: fold the new fields over whatever has not been applied yet,
+         * so two quick presses in the app do not lose the first one's other
+         * fields nor override its newer ones. */
+        if (cmd->has_pump1)    { s_pending.has_pump1 = true;    s_pending.pump1 = cmd->pump1; }
+        if (cmd->has_pump2)    { s_pending.has_pump2 = true;    s_pending.pump2 = cmd->pump2; }
+        if (cmd->has_pump3)    { s_pending.has_pump3 = true;    s_pending.pump3 = cmd->pump3; }
+        if (cmd->has_light)    { s_pending.has_light = true;    s_pending.light = cmd->light; }
+        if (cmd->has_eco)      { s_pending.has_eco = true;      s_pending.eco = cmd->eco; }
+        if (cmd->has_max_jet)  { s_pending.has_max_jet = true;  s_pending.max_jet = cmd->max_jet; }
+        if (cmd->has_setpoint) { s_pending.has_setpoint = true; s_pending.setpoint_f = cmd->setpoint_f; }
+    }
+    portEXIT_CRITICAL(&s_pending_lock);
+}
+
+static void drain_remote(const spa_state_t *s, uint32_t now_ms)
+{
+    ui_remote_cmd_t cmd;
+
+    portENTER_CRITICAL(&s_pending_lock);
+    bool any = s_pending_any;
+    if (any) {
+        cmd = s_pending;
+        s_pending_any = false;
+    }
+    portEXIT_CRITICAL(&s_pending_lock);
+    if (!any) {
+        return;
+    }
+
+    /* Exactly the path a press takes, which is the whole point: the S3 gets the
+     * same request bits and keeps the same veto, and the app learns what really
+     * happened from the next status rather than from its own optimism. */
+    int sp = 0;
+    if (ui_apply_remote(&s_ui, s, now_ms, &cmd, &sp)) {
+        s_setpoint_f = sp;
+        s_send_setpoint = true;
+    }
+}
+
 void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
 {
     s_last = *s;
     s_now_ms = now_ms;
 
+    drain_remote(s, now_ms);
     ui_target_settle(&s_ui, s);
     ui_intent_tick(&s_ui, now_ms);
 
@@ -736,5 +792,7 @@ void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
     out->modes = ui_modes(&s_ui);
     out->send_setpoint = s_send_setpoint;
     out->setpoint_f = s_setpoint_f;
+    out->eco = s_ui.eco;
+    out->max_jet = s_ui.max_jet;
     s_send_setpoint = false;
 }

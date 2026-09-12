@@ -19,7 +19,11 @@ CONFIG_ESP32P4_REV_MIN_100=y
 # single-app partition table.
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# See partitions.csv for why this is custom: the stock "single app, large" table
+# is sized for a 4 MB part and caps the app at 1500K, which the MQTT client
+# exceeds as soon as mqtts:// drags mbedTLS in.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 # The P4 has in-package PSRAM on this board; the framebuffer for a 480x800 panel
 # does not fit in internal RAM.

@@ -15,4 +15,109 @@ config SPA_HMI_BENCH_PEER
         A build with it on says so on the console at boot and on the diagnostics
         screen, so an accidental one is noticeable rather than silent.
 
+config SPA_HMI_NET
+    bool "Bring up the radio through the on-board C6"
+    default n
+    help
+        Associates through the ESP32-C6 on the module (esp_hosted over the
+        module's internal SDIO bus) and takes a DHCP lease. This is step 1 of
+        docs/MQTT.md; the MQTT client and BLE provisioning build on it.
+
+        Off by default on purpose. The panel's job is the tub, and it must not
+        start needing a network to do it — with this off the firmware is exactly
+        the build that has been running the glass, and the header shows the
+        radio down because it is.
+
+config SPA_HMI_WIFI_SSID
+    string "WiFi SSID (bench only — leave empty)"
+    depends on SPA_HMI_NET
+    default ""
+    help
+        A bench shortcut for proving the radio associates, and nothing more.
+        Credentials provisioned into NVS always win over this, so setting it
+        does not tie the board to one network permanently — but a build-time
+        secret still ends up in the binary and in sdkconfig, so leave it empty
+        for anything that goes on a wall and let BLE provisioning do the job.
+
+        sdkconfig is gitignored, so a value here is not committed.
+
+config SPA_HMI_WIFI_PASS
+    string "WiFi password (bench only — leave empty)"
+    depends on SPA_HMI_NET
+    default ""
+    help
+        See CONFIG_SPA_HMI_WIFI_SSID. Same caveat, more so.
+
+config SPA_HMI_TZ
+    string "Timezone for the header clock, POSIX TZ form"
+    depends on SPA_HMI_NET
+    default ""
+    help
+        Set this and the clock starts keeping real time over SNTP; leave it
+        empty and the header keeps showing "--:--".
+
+        Empty is the deliberate default because UTC on a tub panel is a wrong
+        time, and a wrong time is worse than no time — the same reasoning that
+        put "--:--" there in the first place.
+
+        POSIX TZ strings, note, have the sign inverted from UTC offsets:
+          "EST5EDT,M3.2.0,M11.1.0"   US Eastern
+          "CST6CDT,M3.2.0,M11.1.0"   US Central
+          "MST7MDT,M3.2.0,M11.1.0"   US Mountain
+          "PST8PDT,M3.2.0,M11.1.0"   US Pacific
+          "CET-1CEST,M3.5.0,M10.5.0" Central Europe
+
+config SPA_HMI_MQTT
+    bool "Speak the SpaControl app's MQTT protocol"
+    depends on SPA_HMI_NET
+    default n
+    help
+        Publishes spa/status and honours spa/commands, per docs/MQTT.md. A
+        command lands on ui_intent_t through the same path a finger takes, so
+        the S3 keeps its veto and the app learns what actually happened from the
+        next status publish rather than from its own optimism.
+
+        Needs a broker. Off by default for the same reason the radio is.
+
+config SPA_HMI_MQTT_URI
+    string "Broker URI"
+    depends on SPA_HMI_MQTT
+    default ""
+    help
+        For example mqtt://192.168.1.10:1883, or mqtts://host:8883 for TLS.
+        Empty means the client never starts, and it says so on the console.
+
+        Prefer mqtts:// for anything reachable off the local network: a plain
+        mqtt:// session carries the password below in clear text, and gives
+        anyone on the path the ability to run the tub.
+
+config SPA_HMI_MQTT_USER
+    string "Broker username"
+    depends on SPA_HMI_MQTT
+    default ""
+
+config SPA_HMI_MQTT_PASS
+    string "Broker password"
+    depends on SPA_HMI_MQTT
+    default ""
+    help
+        Ends up in the binary and in sdkconfig. sdkconfig is gitignored, so it
+        is not committed, but it is not a secret from anyone holding the board.
+
+config SPA_HMI_MQTT_ID
+    string "Device id"
+    depends on SPA_HMI_MQTT
+    default ""
+    help
+        Set it and the topics become spa/<id>/status and spa/<id>/commands,
+        which is how more than one tub shares a broker. Leave it empty for the
+        bare spa/status and spa/commands the app falls back to.
+
+        It is also published as the "id" field either way.
+
+config SPA_HMI_MQTT_FW
+    string "Firmware version reported in the status payload"
+    depends on SPA_HMI_MQTT
+    default "p4-1.0"
+
 endmenu

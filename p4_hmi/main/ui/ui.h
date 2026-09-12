@@ -29,12 +29,18 @@
 #include <stdint.h>
 
 #include "spa_state.h"
+#include "ui_model.h"   /* ui_remote_cmd_t, for ui_post_remote() */
 
 typedef struct {
     uint8_t requests;       /* SPALINK_REQ_* — restate these every REQ_TX_MS */
     uint8_t modes;          /* SPALINK_MODE_* */
     bool    send_setpoint;  /* the user moved the dial, or a mode moved it for them */
     int     setpoint_f;
+    /* Reported out so a publisher does not need to reach into the intent. Eco
+     * and Max Jets are applied on this board (docs/HMI.md), so they are the two
+     * status fields the S3 cannot tell anyone about. */
+    bool    eco;
+    bool    max_jet;
 } ui_out_t;
 
 /* Brightness is the one thing the UI needs from the board. Passing it in keeps
@@ -47,6 +53,19 @@ void ui_init(ui_brightness_cb_t brightness_cb);
 /* Folds the controller's state into the screen and reports what the HMI now
  * wants. Call with the LVGL lock held. */
 void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out);
+
+/* Land a command that arrived from somewhere other than the glass — today MQTT,
+ * tomorrow whatever else asks. Safe to call from any task.
+ *
+ * It does NOT apply the command; it queues it, and the next ui_tick() applies it
+ * through ui_apply_remote() on the task that already owns the intent. That is
+ * deliberate: ui.h's threading rule is what lets the intent live without a
+ * second mutex, and a phone must not be the one thing allowed to break it.
+ *
+ * A command that arrives faster than the tick rate coalesces onto the previous
+ * one field by field, which is the right answer for a control surface: the last
+ * thing asked for is what the user wants. */
+void ui_post_remote(const ui_remote_cmd_t *cmd);
 
 /* The status strip carries three things this board does not own yet.
  *

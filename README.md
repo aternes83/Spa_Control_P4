@@ -112,7 +112,39 @@ Three things that are not obvious and cost a bring-up session each:
   a package manager. `python3 $IDF_PATH/tools/idf_tools.py install cmake ninja`
   gets them without needing Homebrew.
 
+* **The app partition is custom** (`p4_hmi/partitions.csv`). IDF's stock table is
+  sized for a 4 MB part and caps the app at 1500K, which the MQTT client crosses
+  as soon as `mqtts://` pulls mbedTLS in. This module has 16 MB.
+
 `docs/HARDWARE.md` has the rest, including what the board reports at boot.
+
+### With the radio and MQTT
+
+Both are off by default. A panel that runs a tub must not acquire a dependency on
+a network to do it, so the default build is the one that has been on the glass.
+
+```sh
+cd p4_hmi
+idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.net" menuconfig
+#   Spa HMI -> WiFi SSID / password      (bench only; BLE provisioning replaces it)
+#           -> Broker URI / user / pass / device id
+#           -> Timezone                  (leave empty and the clock stays --:--)
+idf.py build flash monitor
+```
+
+`sdkconfig` is gitignored, so credentials typed into menuconfig stay on the
+machine that typed them and never reach the repository.
+
+**With no network configured the firmware scans instead of idling**, which proves
+the C6, the SDIO link and the slave image without needing a password:
+
+```
+I (3410) transport: Identified slave [esp32c6]
+I (6947) net: radio OK — the C6 answered and found 3 networks
+```
+
+See `docs/MQTT.md` for the wire contract and what is still missing (BLE
+provisioning, OTA, and `set_temp_cal`, which needs a new SpaLink message).
 
 ## Tests
 

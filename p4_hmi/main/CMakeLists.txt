@@ -8,6 +8,8 @@ idf_component_register(
         "spa_state.c"
         "spalink_port.c"
         "bench_peer.c"
+        "net_link.c"
+        "mqtt_spa.c"
         "../../link/spalink_codec.c"
         "ui/ui.c"
         "ui/ui_dial.c"

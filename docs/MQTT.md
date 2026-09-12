@@ -1,9 +1,24 @@
 # MQTT — the app's contract
 
-**Status: not implemented.** This is the design and the wire format, written down
-before the code so the two ends cannot drift. The SpaControl iOS app already
-speaks this protocol to the v2.0 firmware, so it is not a new design — it is a
-contract we have to honour exactly.
+**Status: steps 1-3 implemented, untested against a real broker.** The radio and
+the client are written and on the board; what has not happened is an association
+with a password or a publish to a broker, because both need credentials this
+repository deliberately does not carry.
+
+This file was written before the code so the two ends could not drift, and it
+stays the specification rather than a description: the SpaControl iOS app already
+speaks this protocol to the v2.0 firmware, so it is not a new design and not ours
+to edit to match the code. `tools/test_docs.py` now enforces that direction —
+every key the firmware publishes or accepts must appear here, and no key may be
+camelCase.
+
+| step | state |
+|---|---|
+| 1. `esp_wifi_remote` associates through the C6 | **verified on hardware** |
+| 2. `spa/status` published | written, needs a broker |
+| 3. `spa/commands` honoured | written, needs a broker |
+| 4. BLE provisioning | not written |
+| 5. OTA relay, then `set_temp_cal` | not written |
 
 ## Where it runs, and why not on the C6
 
@@ -128,6 +143,62 @@ the S3 and the coefficients live in its `config.json`. SpaLink has no message fo
 it, and its 7-byte payload cap means five floats need either several frames or a
 reduced form. That is a protocol change, so it is deliberately out of scope for
 the first cut — the app's calibration wizard will not work until it is added.
+
+## What the hardware actually said
+
+Step 1 is done, and it settled the question that made it step 1. The risk was
+never the code — it was whether Guition's stock `JC-C6-slave_v2.3.2.bin` would
+talk to a current `esp_hosted` host at all. It does:
+
+```
+I (3192) sdio_wrapper: SDIO master: Slot 1, Data-Lines: 4-bit Freq(KHz)[40000 KHz]
+I (3192) sdio_wrapper: GPIOs: CLK[18] CMD[19] D0[14] D1[15] D2[16] D3[17] Slave_Reset[54]
+I (3410) transport: Identified slave [esp32c6]
+I (3427) transport:        - HCI over SDIO
+I (6947) net: radio OK — the C6 answered and found 3 networks
+```
+
+Three things worth keeping:
+
+* **No SDIO configuration was needed.** Every value `esp_hosted` picks by
+  default already matches Guition's own working build for this exact carrier
+  (`CONFIG_BOARD_TYPE_GUITION_JC4880P443=y` in the `xiaozhi` demo in the
+  documentation package) — verified key by key before building, then confirmed
+  live by the log above. `sdkconfig.net` pins none of them on purpose; a second
+  copy is a second thing to drift.
+* **`HCI over SDIO` is advertised**, so step 4's BLE provisioning has a transport
+  on this image. The C6 still needs no new firmware.
+* **The radio can be proved without credentials.** With no network configured the
+  firmware scans instead of idling, which exercises the C6 out of reset, the SDIO
+  link, the slave image and the remote `esp_wifi` API, and leaves only the
+  password untested. A board that says "the radio works, it has no network" is
+  worth a great deal more than one that says nothing.
+
+## The partition table had to change
+
+The first link with a real broker URI produced **1,631,360 bytes against a
+1,536,000-byte app partition**. IDF's `single app, large` table is sized for a
+4 MB part; this module has 16 MB, so the ceiling was an accident of the default
+rather than a real constraint. `p4_hmi/partitions.csv` replaces it with two 4 MB
+OTA slots and keeps `nvs` and `phy_init` at byte-identical offsets so provisioned
+credentials survive the migration.
+
+Two slots now rather than one big one later: the flash layout is the one thing an
+OTA cannot change, so getting it wrong means a wired reflash of every board.
+
+Most of that growth is mbedTLS, arriving with `mqtts://` support. It is the last
+thing worth dropping to save space — the alternative puts the broker password in
+clear text on the wire.
+
+**A note on reading the build.** With an empty `CONFIG_SPA_HMI_MQTT_URI` the
+literal `""[0] == '\0'` folds at compile time, `-O3` proves `mqtt_spa_start()`
+unreachable past its warning, and the entire client is dead-stripped — the binary
+grows by about 700 bytes and looks like it contains an MQTT implementation.
+It does not. Check with a real URI, or check the symbols:
+
+```
+riscv32-esp-elf-nm build/esp-idf/main/CMakeFiles/__idf_main.dir/mqtt_spa.c.obj | grep esp_mqtt
+```
 
 ## Order of work
 

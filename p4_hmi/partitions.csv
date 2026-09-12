@@ -1,0 +1,26 @@
+# Partition table for the HMI node. 16 MB of flash on the JC-ESP32P4-M3.
+#
+# Replaces IDF's "single app, large" table, which caps the app at 1500K because
+# it is sized for a 4 MB part. The MQTT client crossed that ceiling the first
+# time it was linked with a real broker URI (1,631,360 bytes against 1,536,000),
+# and the cause is mostly mbedTLS arriving with mqtts:// support — which is the
+# one thing not worth dropping to save space, since the alternative is the
+# broker password in clear text.
+#
+# Two app slots rather than one bigger slot, because OTA is on the roadmap
+# (docs/MQTT.md step 5) and the flash layout is the one thing that cannot be
+# changed by an OTA later: getting it wrong now means a wired reflash of every
+# board in the field. 4 MB a slot is roughly 2.5x the current image, which
+# leaves room for BLE provisioning and TLS certificates without revisiting this.
+#
+# nvs and phy_init keep the exact offsets and sizes the previous table gave them
+# (0x9000/0x6000 and 0xf000/0x1000), so provisioned WiFi credentials survive
+# this migration rather than being silently erased by the move.
+#
+# Name,     Type, SubType, Offset,   Size,      Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+phy_init,   data, phy,     0xf000,   0x1000,
+otadata,    data, ota,     0x10000,  0x2000,
+ota_0,      app,  ota_0,   0x20000,  0x400000,
+ota_1,      app,  ota_1,   0x420000, 0x400000,
+storage,    data, spiffs,  0x820000, 0x7E0000,

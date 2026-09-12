@@ -31,6 +31,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "mqtt_spa.h"
+#include "net_link.h"
 #include "spa_state.h"
 #include "spalink_codec.h"
 #include "spalink_port.h"
@@ -150,6 +152,7 @@ static void link_task(void *arg)
             ui_out_t out;
             if (bsp_display_lock(50)) {
                 update_clock();
+                ui_set_radio(net_link_up(), false);
                 ui_tick(&s_state, t, &out);
                 bsp_display_unlock();
 
@@ -169,6 +172,11 @@ static void link_task(void *arg)
                 if (out.send_setpoint) {
                     send_setpoint_f((float)out.setpoint_f);
                 }
+
+                /* Outside the display lock: a broker that has stopped reading
+                 * must never be able to hold the panel's redraw. The publisher
+                 * is a no-op when nothing changed. */
+                mqtt_spa_publish(&s_state, &out, t);
             }
         }
 
@@ -282,6 +290,12 @@ void app_main(void)
         ESP_LOGE(TAG, "link init failed — the panel will stay in its no-link state");
         return;
     }
+
+    /* After the link, and at a lower priority than it. The tub comes first: if
+     * the radio is slow, absent or misconfigured, the panel still runs the
+     * plant, and nothing below this line can block the control path. */
+    net_link_start();
+    mqtt_spa_start();
 
     xTaskCreate(link_task, "spa_link", 4096, NULL, 5, NULL);
 }

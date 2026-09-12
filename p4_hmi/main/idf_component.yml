@@ -12,3 +12,20 @@ dependencies:
   lvgl/lvgl:
     version: "~9.5.0"
     public: true
+## The radio. The C6 on the module is a radio and nothing else: it runs Guition's
+## stock esp_hosted slave image and the whole TCP/IP stack, the MQTT client and
+## (later) the BLE provisioner live here on the P4, reached over the module's
+## internal SDIO link. See docs/MQTT.md for why it is not an application on the C6.
+##
+## 2.11.7 is not a guess: it is the version Guition's own xiaozhi demo for this
+## exact carrier (CONFIG_BOARD_TYPE_GUITION_JC4880P443=y) was built against, and
+## the SDIO pin map in sdkconfig.defaults is copied from that same build. Both are
+## gated on esp32p4 so the host tools still configure a bare project.
+  espressif/esp_hosted:
+    version: "2.11.7"
+    rules:
+      - if: "target in [esp32p4]"
+  espressif/esp_wifi_remote:
+    version: "*"
+    rules:
+      - if: "target in [esp32p4]"
