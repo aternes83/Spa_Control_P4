@@ -1,0 +1,18 @@
+menu "Spa HMI"
+
+config SPA_HMI_BENCH_PEER
+    bool "Answer the panel's own requests (bench only)"
+    default n
+    help
+        Stands a fake control board up inside this firmware, so the screen can be
+        judged on the bench before an ESP32-S3 exists to talk to. Without it the
+        panel correctly shows nothing but "waiting for the control board".
+
+        NEVER ENABLE THIS FOR A TUB. A panel that answers its own requests will
+        happily show jets running that no relay has been told to close, which is
+        the single thing the rest of this firmware is built to make impossible.
+
+        A build with it on says so on the console at boot and on the diagnostics
+        screen, so an accidental one is noticeable rather than silent.
+
+endmenu

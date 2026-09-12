@@ -44,6 +44,12 @@ typedef struct {
     uint8_t  peer_fw_major;
     uint8_t  peer_fw_minor;
 
+    /* True once a TEMP frame has arrived. `ever_connected` is not enough on its
+     * own: an ACK or a HELLO also proves the link is alive, and drawing
+     * water_dF before any TEMP has landed would put a confident 0 °F on the
+     * dial. The UI shows "--" until this is set. */
+    bool     have_temp;
+
     /* Link health. */
     bool     link_up;
     bool     ever_connected;   /* false until the first frame since boot */

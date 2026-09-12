@@ -32,6 +32,18 @@ else
 fi
 
 echo
+echo "── HMI presentation logic (C) ──────────────────────────────"
+if "$CC" -std=c11 -Wall -Wextra -Werror -I link -I p4_hmi/main \
+        -o "$BUILD/test_ui_model" \
+        tools/test_ui_model.c p4_hmi/main/ui/ui_model.c p4_hmi/main/spa_state.c \
+        link/spalink_codec.c; then
+    "$BUILD/test_ui_model" || fail=1
+else
+    echo "  FAIL could not compile the HMI model tests"
+    fail=1
+fi
+
+echo
 if [ "$fail" -ne 0 ]; then
     echo "SOME TESTS FAILED"
     exit 1

@@ -15,6 +15,7 @@ ESP32-S3-DevKitC-1-N8R8            Guition JC-ESP32P4-M3, 4.3"
 │ light, fault monitor  │◄────────►│ WiFi 6 / BLE 5 (ESP32-C6) │
 │ NTC, flow, high limit │  UART    │ MQTT, app, OTA relay      │
 │ e-stop                │ →RS-485  │ ST7701S DSI, GT911 touch  │
+│                       │          │ 800x480 landscape UI      │
 │ MicroPython           │          │ ESP-IDF + LVGL (C)        │
 └───────────────────────┘          └───────────────────────────┘
    owns the plant                     owns the screen
@@ -34,6 +35,17 @@ never mean losing freeze protection on a winter night. That property is enforced
 by `spalink_session.failsafe_requests()` and tested in
 `tools/test_link_session.py`.
 
+The same idea shapes the screen. A tile lights up when the S3 reports the load
+energised, never because it was pressed, and a request the controller declines
+is drawn as declined rather than as success. See `docs/HMI.md`.
+
+One consequence worth knowing before reading `s3_control/main.py`: the HMI has no
+off switch, so it holds `xSpaEnable` asserted for the life of the board, and the
+four-hour run-timer ceiling is therefore turned off for this installation. The
+link failsafe is what drops enable now, and it does so in 1.5 s without anyone
+having to remember anything. Put the ceiling back if a wired enable switch is
+ever fitted in parallel.
+
 ## Layout
 
 | path | what | language |
@@ -45,6 +57,33 @@ by `spalink_session.failsafe_requests()` and tested in
 | `docs/PROTOCOL.md` | the wire protocol, and why it is shaped that way | |
 | `docs/HARDWARE.md` | pin maps, the interlink cable, verified against vendor schematics | |
 | `docs/WIRING.md` | complete point-to-point wiring diagrams and the parts list | |
+| `docs/HMI.md` | the screen: layout, touch sizing for wet hands, and the state model behind it | |
+
+## Building the HMI
+
+```sh
+# once: the vendor package carries the BSP and is too large for git
+#   download JC4880P443C_I_W from pan.jczn1688.com, unpack at the repo root
+
+. ~/esp/esp-idf/export.sh          # ESP-IDF v5.5
+cd p4_hmi
+idf.py set-target esp32p4
+idf.py -p /dev/cu.usbmodemXXXXX flash monitor
+```
+
+Three things that are not obvious and cost a bring-up session each:
+
+* **The P4 on this module is revision v1.3**, and IDF 5.5 defaults to requiring
+  v3.1+. `sdkconfig.defaults` pins the pre-v3 family; without it the bootloader
+  will not run on the chip and esptool refuses to write it.
+* **The BSP comes from the vendor package, not the component registry.** Guition
+  modified theirs for this panel; the registry one builds and drives the display
+  at the wrong resolution.
+* **On macOS, `install.sh` does not fetch cmake or ninja** — it expects them from
+  a package manager. `python3 $IDF_PATH/tools/idf_tools.py install cmake ninja`
+  gets them without needing Homebrew.
+
+`docs/HARDWARE.md` has the rest, including what the board reports at boot.
 
 ## Tests
 
@@ -66,6 +105,11 @@ Four suites:
 * **`test_link_session.py`** — ACKs, sequence numbers, and the link-loss failsafe.
 * **`test_spa_state.c`** — the HMI's state model: staleness, short frames, and
   millisecond-clock wrap.
+* **`test_ui_model.c`** — the HMI's presentation logic, the part of the screen
+  that is not LVGL: how a press becomes a request, how Eco and Max Jets rewrite
+  those requests, and the four states a control can be drawn in. The one worth
+  the file is `REFUSED` — a control the user asked for that the controller is
+  still not running, which a screen must show rather than quietly report as on.
 * **`test_docs.py`** — every GPIO in the wiring diagrams against the pin map, so
   a diagram someone wires from at 2 a.m. cannot drift out of date.
 
@@ -78,15 +122,19 @@ Four suites:
 | S3 link session + failsafe | done, tested |
 | S3 main loop | written, **never run on hardware** |
 | NTC sensor | ported; math checked on host |
-| P4 link transport (ESP-IDF UART) | written, **never compiled against IDF** |
+| P4 link transport (ESP-IDF UART) | **running on hardware**: UART1 up on GPIO26/27, RS-485 half-duplex |
 | P4 state model | done, tested |
-| P4 LVGL user interface | **not started** — stub only; BSP + panel timings now known |
+| P4 LVGL user interface | **running on hardware**, 800x480 landscape; presentation logic tested on host |
 | RS-485 for the install | **verified against vendor schematics**: SP485E on GPIO26/27, self-directing; S3 needs a 3.3 V transceiver added |
 | CAN transport | superseded by RS-485; pins and codec support retained |
 | MQTT / BLE / OTA on the C6 | **not started** |
 
-Nothing here has been on a board yet. The pieces marked *tested* are tested as
-logic on a host; the pieces marked *written* have not been executed at all.
+The P4 half has now been on the board: it boots, drives the panel, answers touch
+and brings the link up. The S3 half has not — it is still logic tested on a host
+against the firmware running the tub, and has never been executed on an S3.
+
+The two have therefore never spoken to each other. Every P4 state below the link
+layer was exercised against a simulated controller, not a real one.
 
 ## Next steps
 
@@ -95,12 +143,17 @@ logic on a host; the pieces marked *written* have not been executed at all.
    HMI end is already built and self-directing. Prove the physical layer with
    the vendor's own `uart_echo_rs485` example before running any of our code.
 2. Bring up the link on the bench: three wires, both boards logging. The S3's
-   `link: up` and the P4's `[up] water=... ` lines are the whole handshake.
-3. Bring up the panel on the vendor BSP (`esp32_p4_function_ev_board` +
-   `esp_lcd_st7701` + LVGL 9.5, all shipped in the documentation package), then
-   build the screen. 480×800 portrait where the old HMI was 480×320 landscape,
-   so this is a fresh layout rather than a port — which is why no guessed design
-   is checked in. Panel timings are in `docs/HARDWARE.md`.
+   `link: up` and the P4's `[up] water=... ` lines are the whole handshake. The
+   P4 side of this is proven — it prints exactly that against a simulated peer —
+   so what is untested is the S3 and the wire between them.
+3. **Build the screen against the vendor BSP.** The layout is written
+   (`p4_hmi/main/ui/`, described in `docs/HMI.md`) and has been reviewed in a
+   browser mock-up driven by a simulated control board, but has never been
+   through a compiler that has LVGL in it. The project pulls the BSP from the vendor's own
+   copy in the documentation package rather than from the component registry,
+   because Guition modified it for this panel — see the note at the top of
+   `p4_hmi/CMakeLists.txt`. Expect the first build to be about LVGL 9.5 API
+   names, and the first flash to be about geometry.
 4. Move MQTT and BLE onto the C6, then the OTA relay to the S3.
 5. Move the link to RS-485 for the install: one transceiver at the S3 end, build
    the P4 with `SPALINK_USE_RS485`, 120 Ω at each end of the pair. No protocol

@@ -63,6 +63,10 @@ bool spa_state_apply(spa_state_t *s, const spalink_msg_t *m, uint32_t now_ms)
             }
             s->water_dF = w;
             s->setpoint_dF = sp;
+            if (!s->have_temp) {
+                s->have_temp = true;
+                changed = true;
+            }
         }
         break;
 
