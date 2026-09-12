@@ -1,0 +1,14 @@
+## IDF Component Manager manifest.
+##
+## The board BSP is not listed here: it is the vendor's modified copy, added
+## through EXTRA_COMPONENT_DIRS in the project CMakeLists. Its own manifest pulls
+## esp_lvgl_port, esp_lcd_touch_gt911 and the rest of the panel stack.
+##
+## LVGL is pinned to the version the vendor's own examples were built and shipped
+## against, so the panel timings, the lvgl_port and the widget API are all the
+## combination that is known to run on this hardware.
+dependencies:
+  idf: ">=5.4"
+  lvgl/lvgl:
+    version: "~9.5.0"
+    public: true

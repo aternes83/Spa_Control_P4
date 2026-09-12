@@ -67,6 +67,34 @@ def main():
     check("the 5 V part is called out as the one to avoid",
           "MAX485" in wiring and "avoid" in wiring.lower())
 
+    print("the S3 config example matches the firmware that reads it")
+    # Somebody will copy this file onto a board at two in the morning. If it has
+    # drifted from sensors.py, the tub heats to the wrong temperature and nothing
+    # says so — the maths still works, it is just calibrated for another probe.
+    import json
+    import sensors
+    from spa_core import SpaController
+    cfg = json.load(open(os.path.join(ROOT, "s3_control", "config.example.json")))
+
+    sp = cfg.get("setpoint_f")
+    check("setpoint is inside the window main.py will accept",
+          sp is not None and 60.0 <= float(sp) <= 104.0, sp)
+
+    cal = cfg.get("ntc_cal")
+    check("carries an ntc_cal", isinstance(cal, dict))
+    preset = {k: float(v) for k, v in sensors.NTC_BALBOA_M7_CAL.items()}
+    check("and it is still NTC_BALBOA_M7_CAL, the probe in this tub",
+          cal == preset, sorted(set(preset) ^ set(cal or {})) or cal)
+
+    # Fed through the sensor exactly as main.py feeds it.
+    probe = sensors.NTCSensor(bp.SENSOR_PINS["NTC_ADC"], cal, adc=object())
+    check("the calibration point round-trips: r0 reads back as t0",
+          abs(probe._r_to_f(probe.r0) - (probe._t0_c * 9.0 / 5.0 + 32.0)) < 0.05,
+          probe._r_to_f(probe.r0))
+
+    check("the note survives the firmware rewriting the file",
+          "_comment" in json.loads(json.dumps(dict(cfg, setpoint_f=102.0))))
+
     print()
     if FAILED:
         print("FAILED: %d" % len(FAILED))

@@ -66,6 +66,13 @@
 #define LCD_DSI_PHY_LDO_CHAN   3       /* LDO_VO3 feeds VDD_MIPI_DPHY */
 #define LCD_DSI_PHY_LDO_MV     2500
 
+/* How the frame is turned on its way to the panel. The glass is 480x800
+ * portrait and the UI is 800x480, so it has to rotate either way; 270 rather
+ * than 90 because of which way up the module is mounted in this enclosure —
+ * at 90 the picture is correct but upside down. Verified on the board, not
+ * inferred: if the module is ever remounted, this is the one line to change. */
+#define LCD_ROTATE_DEGREES  270
+
 #define LCD_RESET_GPIO      5     /* sheet 2, on the panel FPC */
 #define LCD_BACKLIGHT_GPIO  23    /* LCD_PWM -> MP3202 enable; PWM it for dimming */
 

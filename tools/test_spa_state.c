@@ -58,6 +58,10 @@ int main(void)
     check("heater bit decoded", (s.outputs & SPALINK_OUT_HEATER) != 0, s.outputs);
     check("fault decoded as NO FLOW",
           s.fault_active && s.fault_code == SPA_FAULT_NO_FLOW, s.fault_code);
+    /* A live link is not the same as a known temperature. Until a TEMP frame has
+     * landed there is no reading to draw, and water_dF is still its zeroed
+     * initial value — which is 0 F, a number somebody would believe. */
+    check("a status frame alone claims no temperature", !s.have_temp, s.have_temp);
     check("fault text matches the code",
           strcmp(spa_fault_text(s.fault_code), "NO FLOW") == 0, 0);
     check("identical status is not a redraw", !spa_state_apply(&s, &m, 1100), 0);
@@ -70,6 +74,7 @@ int main(void)
     spa_state_apply(&s, &m, 1200);
     check("water temp rounds to 101 F", spa_state_water_f(&s) == 101, spa_state_water_f(&s));
     check("setpoint rounds to 100 F", spa_state_setpoint_f(&s) == 100, spa_state_setpoint_f(&s));
+    check("and now there is a temperature to draw", s.have_temp, 0);
 
     /* A 0.4 F drift must not force a redraw; crossing the half degree must. */
     spalink_pack_i16(1010, &tp[0]);

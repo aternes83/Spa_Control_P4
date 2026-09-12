@@ -64,8 +64,81 @@ The I²C bus is shared with the ES8311 codec and the RTC. The BSP selects these
 timings under `CONFIG_BSP_LCD_TYPE_1024_600`, whose name is misleading — the
 values inside are this board's 480×800.
 
-Note the orientation: **480×800 portrait**, where the old ST7796 HMI was 480×320
-landscape. The screen is a fresh layout, not a port.
+Note the orientation. The glass is **480×800 portrait**; the UI is **800×480
+landscape**, so LVGL rotates the frame on its way to the framebuffer
+(`sw_rotate` plus `bsp_display_rotate(disp, LV_DISPLAY_ROTATION_90)`). The panel
+is driven in DPI mode over MIPI-DSI and scans in its native orientation, so there
+is no controller-side rotation to ask for instead. Two consequences: rotation
+costs a copy per redraw, which is why the UI only writes what changed, and the
+BSP's tear-avoidance modes cannot be used at the same time — leave
+`CONFIG_BSP_DISPLAY_LVGL_AVOID_TEAR` off. See `docs/HMI.md`.
+
+### Verified on the board
+
+Everything in this section below the table was read off the running hardware on
+2026-09-11, not inferred:
+
+```
+efuse_init: Min chip rev v1.0   Max chip rev v1.99   Chip rev: v1.3
+esp_psram:  Found 32MB PSRAM device, Speed: 200MHz, X16 Mode
+mmu_psram:  .rodata xip on psram / .text xip on psram
+st7701:     version 1.1.3 -> Display initialized
+GT911:      TouchPad_ID:0x39,0x31,0x31  (touch answering on the shared I2C)
+spalink:    link up on uart1 tx=26 rx=27 @115200 (RS485 half-duplex)
+```
+
+**Silicon revision: v1.3.** This matters more than anything else here. ESP-IDF
+5.5 defaults to requiring **v3.1 or newer**, and Espressif's own Kconfig says the
+pre-3.0 and 3.x parts have *"huge hardware difference"* and are not compatible.
+The default build therefore produces a bootloader this chip physically cannot
+run; `esptool` refuses to write it, which is the only reason a first flash is not
+a brick. `p4_hmi/sdkconfig.defaults` pins it:
+
+```
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+```
+
+The vendor's own shipped `sdkconfig` for this board agrees. Re-check with
+`esptool read_mac` if the module is ever replaced — and note a `--no-stub` read
+reports the revision unreliably (it said v0.0 on this same chip), so trust the
+stubbed read.
+
+**IRAM is tight on a pre-v3 part.** With the v3 ROM unavailable, IDF links its
+own copies of the flash and cache routines that v3 gets from ROM, and those are
+IRAM-resident. Adding anything else to IRAM overflows the region, and the failure
+names none of it — it is a wall of `--enable-non-contiguous-regions discards
+section` from freertos, spi_flash and hal. `CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM`
+is the one to leave alone; the note in `sdkconfig.defaults` says why.
+
+**Brightness works.** The BSP logs `ledc: GPIO 23 is not usable, maybe conflict
+with others` at boot and then drives the backlight correctly anyway. The warning
+is noise.
+
+**Which BSP.** Use the one in the documentation package, at
+
+```
+JC4880P443C_I_W/1-Demo/idf_examples/ESP-IDF_5.5.4/common_components/
+    espressif__esp32_p4_function_ev_board/
+    espressif__esp_lcd_st7701/
+```
+
+and *not* `espressif/esp32_p4_function_ev_board` from the component registry.
+Guition modified their copy for this panel: the 480×800 timings above are the
+ones it carries under `CONFIG_BSP_LCD_TYPE_1024_600`, and its ST7701 dependency
+points at the local driver beside it. The registry version builds perfectly well
+and drives the panel at the wrong resolution, which is the worse failure of the
+two. `p4_hmi/CMakeLists.txt` wires the local copies in through
+`EXTRA_COMPONENT_DIRS`; the vendor's own `lvgl_demo_v9` example is the reference
+for the rest of the display configuration.
+
+> **A fresh clone cannot build the HMI.** `JC4880P443C_I_W/` is 545 MB and is
+> deliberately outside git (see `.gitignore`), but the build now depends on two
+> components inside it. Download the package from `pan.jczn1688.com` and unpack
+> it at the repo root before `idf.py build`. Everything else the firmware needs
+> from that package — pin assignments, panel timings, the RS-485 wiring — is
+> extracted into this file and `board_pins.h` with the source sheet named, so
+> only the build needs the drop, not the reasoning.
 
 ### Free user I/O — Expand-IO header JP1 (sheet 4)
 

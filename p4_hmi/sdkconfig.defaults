@@ -1,16 +1,71 @@
 CONFIG_IDF_TARGET="esp32p4"
 
+# ── Silicon revision ────────────────────────────────────────────────────────
+# The P4 on this module is revision v1.3, and ESP-IDF 5.5 defaults to requiring
+# v3.1 or newer. That is not a tuning choice: Espressif's own Kconfig says the
+# pre-3.0 and 3.x parts have "huge hardware difference" and are not compatible,
+# so the default build produces a bootloader this chip physically will not run —
+# esptool refuses to write it, which is the only reason it is not a brick.
+#
+# Selecting the 0.x/1.x family gives up support for 3.x parts in the same
+# binary. There is no build that covers both, so this tracks the hardware in
+# hand. Re-check it against `esptool read_mac` if the module is ever replaced;
+# note that a --no-stub read reports the revision unreliably (it said v0.0 on
+# this same chip), so trust the stubbed read.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+
+# 16 MB flash on the JC-ESP32P4-M3, and LVGL plus the BSP do not fit the default
+# single-app partition table.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
 # The P4 has in-package PSRAM on this board; the framebuffer for a 480x800 panel
 # does not fit in internal RAM.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_HEX=y
 CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
 # The control loop lives on the S3, so this node can afford a normal tick rate.
 CONFIG_FREERTOS_HZ=1000
 
 # Keep the console on UART0 so the link on UART1 is never contended.
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# ── Panel ───────────────────────────────────────────────────────────────────
+# The name is wrong and the values are right: inside the vendor's BSP this
+# choice carries THIS board's 480x800 ST7701S timings, not a 1024x600 panel.
+# See docs/HARDWARE.md and board_pins.h.
+CONFIG_BSP_LCD_TYPE_1024_600=y
+CONFIG_BSP_LCD_COLOR_FORMAT_RGB565=y
+CONFIG_BSP_LCD_USE_DMA2D=y
+CONFIG_BSP_LCD_DPI_BUFFER_NUMS=1
+
+# ── LVGL ────────────────────────────────────────────────────────────────────
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+# The dial's readout. Not on by default, and the only font here that is not —
+# see UI_FONT_TEMP in ui/ui_theme.h.
+CONFIG_LV_FONT_MONTSERRAT_48=y
+CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
+# Deliberately NOT setting CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM. It puts LVGL's
+# hot paths in IRAM, which a v3.x P4 can afford and this v1.3 part cannot: with
+# the pre-v3 ROM, IDF links its own copies of the flash and cache routines that
+# v3 gets from ROM, and those are IRAM-resident. Adding LVGL on top overflows the
+# region and the app will not link — the failure is a wall of "discards section"
+# from freertos, spi_flash and hal, which does not name LVGL anywhere.
+#
+# The vendor's own built sdkconfig for this board does not set it either, and is
+# otherwise identical to this file. Their sdkconfig.defaults does, which is where
+# it was copied from; trust the built config, not the defaults.
 
 # Networking runs through the on-board ESP32-C6 over SDIO (esp_hosted). Enable
 # the remote-radio components when the MQTT/BLE work starts.
