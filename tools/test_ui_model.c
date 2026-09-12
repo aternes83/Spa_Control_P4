@@ -213,6 +213,65 @@ int main(void)
     ui.max_jet = true;
     check_str("and so does max jet", (ui_pumps_locked(&ui, &why), why), "Max Jets");
 
+    printf("a command from the app lands in the same intent as a finger\n");
+    /* The whole point of ui_apply_remote: MQTT is a second input to one intent,
+     * not a parallel control path. If these diverge, the phone and the glass
+     * show different things. */
+    ui_intent_init(&ui);
+    s = live_state(0, SPALINK_IN_SPA_ENABLE);
+    s.setpoint_dF = 1020;
+    ui_remote_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+
+    cmd.has_pump1 = true; cmd.pump1 = 2;
+    cmd.has_light = true; cmd.light = true;
+    check("loads land where the tiles put them",
+          !ui_apply_remote(&ui, &s, 0, &cmd, &sp) &&
+          ui.pump1 == 2 && ui.light, ui.pump1);
+    check("and reach the wire as requests",
+          (ui_requests(&ui) & (SPALINK_REQ_PUMP1_HIGH | SPALINK_REQ_LIGHT)) ==
+          (SPALINK_REQ_PUMP1_HIGH | SPALINK_REQ_LIGHT), ui_requests(&ui));
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.has_pump1 = true; cmd.pump1 = 99;      /* the app should never, but still */
+    ui_apply_remote(&ui, &s, 0, &cmd, &sp);
+    check("a nonsense pump speed is clamped, not stored",
+          ui.pump1 == 2, ui.pump1);
+
+    /* Eco over MQTT has to do everything the Eco tile does. */
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.has_eco = true; cmd.eco = true;
+    check("eco asks for the setpoint hand-off",
+          ui_apply_remote(&ui, &s, 0, &cmd, &sp) && sp == UI_ECO_SETPOINT_F, sp);
+    check("and rewrites the pumps exactly as the tile would",
+          ui_requests(&ui) == (SPALINK_REQ_SPA_ENABLE | SPALINK_REQ_PUMP |
+                               SPALINK_REQ_LIGHT), ui_requests(&ui));
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.has_max_jet = true; cmd.max_jet = true;
+    check("max jet over the wire still cancels eco",
+          ui_apply_remote(&ui, &s, 0, &cmd, &sp) && !ui.eco && ui.max_jet, 0);
+
+    /* An explicit temperature in the same command beats a mode's hand-off. */
+    ui_intent_init(&ui);
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.has_eco = true;      cmd.eco = true;
+    cmd.has_setpoint = true; cmd.setpoint_f = 99;
+    check("an explicit set_temp wins over eco in one command",
+          ui_apply_remote(&ui, &s, 0, &cmd, &sp) && sp == 99, sp);
+    check("and is held locally until the S3 confirms it",
+          ui.target_local && ui_target_f(&ui, &s) == 99, ui_target_f(&ui, &s));
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.has_setpoint = true; cmd.setpoint_f = 130;
+    ui_apply_remote(&ui, &s, 0, &cmd, &sp);
+    check("a setpoint outside the S3's window is clamped before it is sent",
+          sp == UI_SETPOINT_MAX_F, sp);
+
+    memset(&cmd, 0, sizeof(cmd));
+    check("an empty command changes nothing and sends nothing",
+          !ui_apply_remote(&ui, &s, 0, &cmd, &sp), 0);
+
     printf("the dial's target\n");
     ui_intent_init(&ui);
     s = live_state(0, SPALINK_IN_SPA_ENABLE);

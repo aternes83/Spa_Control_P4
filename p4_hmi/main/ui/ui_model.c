@@ -180,6 +180,38 @@ bool ui_pumps_locked(const ui_intent_t *ui, const char **why)
     return false;
 }
 
+bool ui_apply_remote(ui_intent_t *ui, const spa_state_t *s, uint32_t now_ms,
+                     const ui_remote_cmd_t *cmd, int *setpoint_f_out)
+{
+    bool send = false;
+
+    /* Loads first, so a mode applied below overrides them exactly as it would
+     * have done had the user pressed the tiles in the same order. */
+    if (cmd->has_pump2) ui->pump2 = cmd->pump2;
+    if (cmd->has_pump3) ui->pump3 = cmd->pump3;
+    if (cmd->has_light) ui->light = cmd->light;
+    if (cmd->has_pump1) ui->pump1 = (cmd->pump1 > 2) ? 2 : cmd->pump1;
+
+    /* Max Jet before Eco: if a single command somehow carries both, the same
+     * one wins here as wins in ui_requests(). */
+    if (cmd->has_max_jet && ui_set_max_jet(ui, cmd->max_jet, s, now_ms, setpoint_f_out)) {
+        send = true;
+    }
+    if (cmd->has_eco && ui_set_eco(ui, cmd->eco, s, setpoint_f_out)) {
+        send = true;
+    }
+
+    /* An explicit temperature last, so it beats a mode's hand-off in the same
+     * command — the app asked for a number and should get it. */
+    if (cmd->has_setpoint) {
+        *setpoint_f_out = ui_clamp_setpoint_f(cmd->setpoint_f);
+        ui->target_local = true;
+        ui->target_f = *setpoint_f_out;
+        send = true;
+    }
+    return send;
+}
+
 int ui_clamp_setpoint_f(int f)
 {
     if (f < UI_SETPOINT_MIN_F) return UI_SETPOINT_MIN_F;

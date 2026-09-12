@@ -145,6 +145,35 @@ int  ui_clamp_setpoint_f(int f);
 /* Drop the optimistic target once the controller confirms it. */
 void ui_target_settle(ui_intent_t *ui, const spa_state_t *s);
 
+/* ── Remote commands ─────────────────────────────────────────────────────────
+ * What the app sends over MQTT, decoded. Every field is optional — the app omits
+ * what has not changed — hence a has_* flag beside each.
+ *
+ * This exists so a command from the phone and a press on the glass land in the
+ * SAME place. If MQTT got its own control path the two would show different
+ * things and fight each other; routed through here, a remote command is a
+ * request like any other and inherits the S3's veto for free. See docs/MQTT.md.
+ */
+typedef struct {
+    bool has_pump1;     uint8_t pump1;      /* 0 off, 1 low, 2 high */
+    bool has_pump2;     bool    pump2;
+    bool has_pump3;     bool    pump3;
+    bool has_light;     bool    light;
+    bool has_eco;       bool    eco;
+    bool has_max_jet;   bool    max_jet;
+    bool has_setpoint;  int     setpoint_f;
+} ui_remote_cmd_t;
+
+/* Fold one command into the intent. Returns true if the caller must send a
+ * SETPOINT frame, with the value in *setpoint_f_out — which happens both when
+ * the app asks for a temperature and when it toggles a mode that moves it.
+ *
+ * Modes go through ui_set_eco()/ui_set_max_jet() rather than the fields, so the
+ * setpoint hand-off and the mutual cancellation cannot be skipped by arriving
+ * over the network instead of through a finger. */
+bool ui_apply_remote(ui_intent_t *ui, const spa_state_t *s, uint32_t now_ms,
+                     const ui_remote_cmd_t *cmd, int *setpoint_f_out);
+
 /* "3h 58m", "12m", "45s" — for the run timers. Writes at most `n` bytes. */
 void ui_format_duration(uint32_t seconds, char *out, size_t n);
 

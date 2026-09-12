@@ -58,6 +58,7 @@ ever fitted in parallel.
 | `docs/HARDWARE.md` | pin maps, the interlink cable, verified against vendor schematics | |
 | `docs/WIRING.md` | complete point-to-point wiring diagrams and the parts list | |
 | `docs/HMI.md` | the screen: layout, touch sizing for wet hands, and the state model behind it | |
+| `docs/MQTT.md` | the app's wire contract, and why MQTT runs on the P4 rather than the C6 | |
 
 ## Bringing up the S3
 
@@ -155,7 +156,7 @@ Four suites:
 | P4 LVGL user interface | **running on hardware**, 800x480 landscape; presentation logic tested on host |
 | RS-485 for the install | **verified against vendor schematics**: SP485E on GPIO26/27, self-directing; S3 needs a 3.3 V transceiver added |
 | CAN transport | superseded by RS-485; pins and codec support retained |
-| MQTT / BLE / OTA on the C6 | **not started** |
+| MQTT / BLE / OTA | contract written (`docs/MQTT.md`), remote-command seam built and tested; **radio not started** |
 
 The P4 half has now been on the board: it boots, drives the panel, answers touch
 and brings the link up. The S3 half has not — it is still logic tested on a host
@@ -182,7 +183,13 @@ layer was exercised against a simulated controller, not a real one.
    because Guition modified it for this panel — see the note at the top of
    `p4_hmi/CMakeLists.txt`. Expect the first build to be about LVGL 9.5 API
    names, and the first flash to be about geometry.
-4. Move MQTT and BLE onto the C6, then the OTA relay to the S3.
+4. **MQTT, on the P4 — not the C6.** The C6 keeps Guition's stock slave image
+   and is only a radio, driven over SDIO by `esp_wifi_remote`; the TCP/IP stack,
+   the MQTT client and BLE provisioning all live on the P4. `docs/MQTT.md` has
+   the app's wire contract and the reasoning. The seam where a remote command
+   meets the UI's intent (`ui_apply_remote`) is written and host-tested, so what
+   is left is the radio itself: prove association first, then publish, then
+   subscribe.
 5. Move the link to RS-485 for the install: one transceiver at the S3 end, build
    the P4 with `SPALINK_USE_RS485`, 120 Ω at each end of the pair. No protocol
    change — see `docs/HARDWARE.md`.
