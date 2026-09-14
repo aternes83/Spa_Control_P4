@@ -82,17 +82,40 @@ static void notify_json(const char *json)
         if (n > chunk) {
             n = chunk;
         }
-        struct os_mbuf *om = ble_hs_mbuf_from_flat(json + off, n);
-        if (!om) {
-            ESP_LOGW(TAG, "out of mbufs — reply dropped: %s", json);
-            return;
+        /* Retry rather than give up. A chunk is refused when the stack is out
+         * of buffers, which here is a passing condition, not a broken link:
+         * the WiFi association that these replies report finishes at the same
+         * moment the MQTT client opens a TLS connection, and both share the
+         * C6's radio.
+         *
+         * Abandoning a message halfway is the worst of the options. The phone
+         * reassembles by counting braces, so a truncated object never completes
+         * — it waits forever for a closing brace that was never sent, and sits
+         * in its buffer corrupting the next reply too. Finishing the message
+         * late is always better than finishing it never. */
+        int rc = BLE_HS_ENOMEM;
+        for (int attempt = 0; attempt < 20 && rc != 0; attempt++) {
+            struct os_mbuf *om = ble_hs_mbuf_from_flat(json + off, n);
+            if (!om) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+                continue;
+            }
+            rc = ble_gatts_notify_custom(s_conn, s_tx_handle, om);
+            if (rc != 0) {
+                /* The mbuf is consumed either way, so the next attempt builds
+                 * a fresh one. */
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            if (s_conn == BLE_HS_CONN_HANDLE_NONE) {
+                return;         /* the phone left; nobody is waiting */
+            }
         }
-        int rc = ble_gatts_notify_custom(s_conn, s_tx_handle, om);
         if (rc != 0) {
             /* Silence here is the worst outcome: the phone sits waiting for a
              * reply that was never sent, and nothing anywhere says so. */
-            ESP_LOGW(TAG, "notify failed (rc %d) — the phone will not see: %s", rc, json);
-            return;         /* the mbuf is consumed either way */
+            ESP_LOGW(TAG, "notify failed (rc %d) after retries — the phone will "
+                          "not see: %s", rc, json);
+            return;
         }
     }
 }
