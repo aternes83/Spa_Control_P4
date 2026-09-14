@@ -64,12 +64,15 @@ SENSOR_PINS = {
 LINK_PINS = {
     "UART_TX": 47,
     "UART_RX": 48,
-    # Direction control for the RS485 transceiver on THIS board — a MAX3485CSA+
-    # (3.3 V; see docs/WIRING.md for why not a 5 V MAX485). The P4's on-board
-    # SP485E switches itself, its DE//RE being driven from TX through a
-    # 74LVC1G132, but a bare MAX3485 does not. Set to None if you fit an
-    # auto-direction module; UartTransport handles either.
-    "RS485_DE": 1,       # DE and /RE tied together
+    # Direction control for the RS485 transceiver on THIS board — a MAX3485
+    # (3.3 V; see docs/WIRING.md for why not a 5 V MAX485). On a breakout module
+    # this is the pin marked EN; on a bare SOIC-8 it is pins 2 and 3, /RE and DE,
+    # tied together. The P4's on-board SP485E needs no such pin — its DE//RE is
+    # driven from TX through a 74LVC1G132 — but a MAX3485 does. Set to None only
+    # for a true auto-direction module with no EN pin at all; UartTransport
+    # handles either. Fit a 10k pull-down so the module boots listening rather
+    # than jamming the bus while this pin is still floating.
+    "RS485_DE": 1,       # module "EN"; bare chip /RE + DE
     # Reserved. CAN is no longer the planned upgrade path — RS485 gives the same
     # noise immunity over this run, needs no protocol change, and avoids a custom
     # MicroPython build (TWAI is not in mainline). Kept only so the pins are not

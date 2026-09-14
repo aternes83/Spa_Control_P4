@@ -33,10 +33,11 @@ e-stop──┤ GPIO11        GPIO1  ──► DE ┘│════════
 
 | Qty | Part | Notes |
 |---:|---|---|
-| 1 | **MAX3485CSA+** RS-485 transceiver, SOIC-8 | **3.3 V**. The S3 end. See §4 for why not a MAX485. |
-| 2 | 120 Ω resistor, ¼ W | Bus termination, one at each end |
+| 1 | **MAX3485 breakout module** (`EN VCC RXD TXD GND GND A B`) | **3.3 V**. The S3 end — pin map in §4. A bare `MAX3485CSA+` SOIC-8 works too. |
+| 1 | 10 kΩ resistor | Pull-down on `EN`, so the module boots listening instead of jamming the bus. See §4. |
+| 2 | 120 Ω resistor, ¼ W | Bus termination, one at each end — **check the module first**, many have one fitted |
 | 1 | Twisted pair, shielded (Cat5e is fine) | S3 → P4 run. One pair for A/B, plus a ground conductor |
-| 1 | 100 nF ceramic capacitor | Decoupling across the transceiver's VCC/GND |
+| 1 | 100 nF ceramic capacitor | Decoupling across VCC/GND. Modules usually have this already. |
 
 Acceptable substitutes for the transceiver, all 3.3 V and pin-compatible:
 
@@ -55,7 +56,7 @@ bare chip, check the silkscreen on the chip itself: the common cheap blue
 
 ```text
    USB-C or 5 V supply ──┬── ESP32-S3 DevKit  5V pin
-                         │      └── 3V3 pin ──┬── MAX3485 VCC (pin 8)
+                         │      └── 3V3 pin ──┬── MAX3485 module VCC
                          │                    └── NTC divider top rail
                          │
                          └── P4 carrier USB-C (its own supply)
@@ -69,7 +70,59 @@ few volts of ground offset, not an unbonded floating pair.
 
 ## 4. The RS-485 link
 
-### S3 end — the transceiver you add
+### S3 end — the module you have
+
+Breakout modules relabel the MAX3485's pins, so `EN / VCC / RXD / TXD / GND /
+GND / A / B` is the same chip underneath with friendlier names:
+
+| Module pin | IC pin | What it really is | Connect to |
+|---|---|---|---|
+| `EN` | 2 + 3 | `/RE` and `DE`, tied together | **GPIO1** |
+| `VCC` | 8 | Supply — sets the logic level | **3V3**, never 5 V |
+| `RXD` | 1 | `RO`, data **out** of the module | **GPIO48** (the S3's RX) |
+| `TXD` | 4 | `DI`, data **in** to the module | **GPIO47** (the S3's TX) |
+| `GND` | 5 | Ground | GND |
+| `GND` | — | Same net, just a second pin | GND (or leave) |
+| `A` | 6 | Non-inverting line | twisted pair → P4 `J4` `A` |
+| `B` | 7 | Inverting line | twisted pair → P4 `J4` `B` |
+
+```text
+   ESP32-S3                         MAX3485 module
+   ────────                         ──────────────
+   GPIO48 (RX) ◄──────────────────── RXD
+   GPIO47 (TX) ────────────────────► TXD
+   GPIO1  (DE) ──┬─────────────────► EN
+                 │
+                10k                  A ───── twisted pair ──► P4 J4 A
+                 │                   B ───── twisted pair ──► P4 J4 B
+                GND                  GND ─── third conductor ─ P4 GND
+                                     VCC ◄── 3V3
+```
+
+**`RXD` and `TXD` are named for the pin you connect them to, not for what the
+module does with them.** They go straight across — `RXD` to the S3's RX, `TXD`
+to the S3's TX — which reads wrong if you are used to crossing TX and RX. It is
+not crossed here because the crossing already happened inside the naming: `RXD`
+is the receiver's *output*, carrying data toward the S3.
+
+Vendors are not perfectly consistent about this. If the link stays silent with
+everything else correct, swap those two wires — both are 3.3 V logic and neither
+pin is harmed by the swap, so it costs nothing to try.
+
+**The 10 kΩ pull-down on `EN` is worth fitting.** `GPIO1` floats from power-up
+until `main.py` configures it, and a floating `EN` can leave the module driving
+the bus — one node holding the pair while it boots is enough to jam the link for
+both. Pulled down, the module powers up listening, which is the safe state.
+
+Check the chip marking before powering it: the cheap blue modules sold as
+"RS485" often carry a 5 V **MAX485**. See *Why 3.3 V, specifically* below — this
+is the one substitution that quietly damages the S3.
+
+Many modules already carry a 120 Ω termination resistor across A/B, sometimes on
+a jumper. Look for it before adding your own, and see *The bus* below: this link
+has exactly two ends, so exactly two terminations.
+
+### If you have a bare SOIC-8 chip instead
 
 ```text
    ESP32-S3                        MAX3485 (SOIC-8, 3.3 V)
@@ -81,7 +134,7 @@ few volts of ground offset, not an unbonded floating pair.
                  │                 │               │
                  └─────────────────┤ 3  DE     A 6 ├── A
                                    │               │
-   GPIO47 (TX) ─────────────────────┤ 4  DI   GND 5 ├──── GND
+   GPIO47 (TX) ────────────────────┤ 4  DI   GND 5 ├──── GND
                                    └───────────────┘
 
    /RE and DE tied together: one GPIO drives both.
@@ -89,8 +142,8 @@ few volts of ground offset, not an unbonded floating pair.
 ```
 
 `GPIO1` is `LINK_PINS["RS485_DE"]` in `s3_control/board_pins.py`. If you fit an
-auto-direction module instead — one with no DE pin — set that entry to `None`
-and leave pins 2 and 3 to the module.
+auto-direction module instead — one with no `EN` or `DE` pin at all — set that
+entry to `None` and the driver stops toggling anything.
 
 ### P4 end — nothing to build
 
