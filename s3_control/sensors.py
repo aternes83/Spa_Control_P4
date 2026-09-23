@@ -39,6 +39,25 @@ NTC_VSUPPLY_V        = 3.3      # divider top rail (absorbed by calibration if s
 NTC_R_OPEN_OHMS      = 500000.0 # above → probe open / disconnected → fault
 NTC_R_SHORT_OHMS     = 200.0    # below → probe shorted → fault
 NTC_FAIL_LIMIT       = 5        # consecutive bad reads before declaring a fault
+
+# Smoothing, as a one-pole filter over the 1 s samples.
+#
+# The raw reading carries roughly 0.6 °F peak-to-peak of noise on long probe
+# leads, and temp_hysteresis_f is 0.5 °F — the noise is wider than the whole
+# thermostat band, so without this the heater contactor chatters on noise alone,
+# once per sample, whenever the water sits near setpoint.
+#
+# Filtered rather than sampled slowly, and the difference matters. Reading every
+# 20 s instead would cut how *often* the relay can flip without touching the
+# noise that flips it, and it would stretch NTC_FAIL_LIMIT from 5 s to 100 s
+# before a disconnected probe is called a fault. Filtering at 1 s keeps fault
+# detection quick and cuts the noise by about sqrt(tau/interval) — near 4.5x
+# here, which puts it well inside the hysteresis band. Water is thermally slow;
+# 20 s of lag on a body of water that takes hours to heat is nothing.
+NTC_FILTER_TAU_MS    = 20000    # time constant; 0 disables the filter
+NTC_FILTER_ALPHA     = (float(NTC_READ_INTERVAL_MS) /
+                        (NTC_FILTER_TAU_MS + NTC_READ_INTERVAL_MS)
+                        if NTC_FILTER_TAU_MS > 0 else 1.0)
 TEMP_PLAUSIBLE_MIN_F = 20.0     # below this = open/short/ice — implausible for spa water
 TEMP_PLAUSIBLE_MAX_F = 200.0    # above this = fault; real over-temp is the high limit's job
 
@@ -60,7 +79,8 @@ NTC_BALBOA_M7_CAL = {"r_fixed": 10000.0, "r0": 30000.0, "t0_c": 25.0,
 
 class NTCSensor:
     def __init__(self, pin, cal=None, adc=None):
-        self._last_f = None
+        self._last_f = None              # filtered, and what read_f() returns
+        self._raw_f = None               # unfiltered, for diagnostics only
         self._fail = NTC_FAIL_LIMIT      # start faulted until the first good read
         self._next_ms = 0
         self._r = None                   # last computed resistance (Ω)
@@ -133,13 +153,26 @@ class NTCSensor:
             self._note_fail()
             return
         if TEMP_PLAUSIBLE_MIN_F <= f <= TEMP_PLAUSIBLE_MAX_F:
-            self._last_f = f
+            self._raw_f = f
+            # Re-seed instead of slewing on the first good read after a fault,
+            # so a probe that was unplugged for a while does not drag the
+            # reading across from wherever it was left.
+            if self._last_f is None or self._fail >= NTC_FAIL_LIMIT:
+                self._last_f = f
+            else:
+                self._last_f += NTC_FILTER_ALPHA * (f - self._last_f)
             self._fail = 0
         else:
             self._note_fail()
 
     def read_f(self):
+        """Filtered water temperature. This is what the control loop uses."""
         return self._last_f
+
+    def read_raw_f(self):
+        """The latest unfiltered sample. Diagnostics only — comparing it against
+        read_f() shows how much noise the filter is actually removing."""
+        return self._raw_f
 
     def read_ohms(self):
         return self._r
