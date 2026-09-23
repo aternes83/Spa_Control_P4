@@ -328,8 +328,8 @@ in software.
 ```text
         3V3
          │
-        R_fixed          10 kΩ for a generic 10 k NTC
-         │               30 kΩ for the Balboa M7 (this tub)
+        R_fixed          10 kΩ 1%, whichever probe is fitted
+         │
          ├──────────────► GPIO6  (ADC1_CH5)
          │
         NTC probe        in the wet well
@@ -337,10 +337,15 @@ in software.
         GND
 ```
 
-`R_fixed` matches the probe's nominal resistance at 25 °C — that puts the
-divider near mid-rail at spa temperatures, where the ADC is most linear. The
-presets are `NTC_DEFAULT_CAL` (10 k, Beta 3950) and `NTC_BALBOA_M7_CAL`
-(30 k, Beta 3892) in `s3_control/sensors.py`.
+**`R_fixed` is 10 kΩ and does not change with the probe.** It is the divider
+resistor on the board, inherited from v2.0. Only `r0` and `beta` in the
+calibration describe the thermistor: `NTC_DEFAULT_CAL` is `r0` 10 k / Beta 3950
+for a generic part, `NTC_BALBOA_M7_CAL` is `r0` 30 k / Beta 3892 for this tub's
+probe — both on the same 10 k divider.
+
+Reading `r_fixed` as "match it to the probe" is what made the panel report a
+70 °F room as 30 °F: three times the resistance, a plausible-looking cold
+number, and no fault raised because it was still inside the plausible band.
 
 Above ~500 kΩ the probe reads as open, below 200 Ω as shorted; either raises
 `FAULT_TEMP_SENSOR` and the heater is refused. Keep the probe leads away from
