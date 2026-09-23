@@ -48,7 +48,13 @@ NTC_DEFAULT_CAL = {"r_fixed": 10000.0, "r0": 10000.0, "t0_c": 25.0,
                    "beta": 3950.0, "offset_f": 0.0}
 
 # Balboa M7 (30 k NTC) — the preset for the sensor already in this tub.
-NTC_BALBOA_M7_CAL = {"r_fixed": 30000.0, "r0": 30000.0, "t0_c": 25.0,
+#
+# r_fixed is the divider resistor fitted on the board, NOT the probe: it stays
+# 10 k whichever thermistor is on the end of the leads. Only r0 and beta
+# describe the probe. This carried 30 k for r_fixed when it was ported, which
+# reads a 70 F room as 30 F — plausible enough to pass a plausibility check and
+# be believed. openplc-hot-tub had it right: r_fixed 10000, r0 30000.
+NTC_BALBOA_M7_CAL = {"r_fixed": 10000.0, "r0": 30000.0, "t0_c": 25.0,
                      "beta": 3892.0, "offset_f": 0.0}
 
 

@@ -337,11 +337,16 @@ ever joins the bus, where CAN's arbitration would start to earn its keep.
 NTC thermistor on ADC1, wired as a divider:
 
 ```
-3.3V ── R_fixed ──┬── GPIO6 (ADC1_CH5) ── NTC ── GND
+3.3V ── R_fixed 10 kΩ 1% ──┬── GPIO6 (ADC1_CH5) ── NTC ── GND
 ```
 
+**`R_fixed` is 10 kΩ and stays 10 kΩ** whichever probe is fitted — it is the
+divider resistor on the board, inherited from v2.0, not a property of the
+thermistor. Only `r0` and `beta` describe the probe.
+
 The tub's existing Balboa M7 probe is a 30 k NTC; its preset is
-`sensors.NTC_BALBOA_M7_CAL`. `NTC_DEFAULT_CAL` is a generic 10 k Beta-3950 part.
+`sensors.NTC_BALBOA_M7_CAL`, which is `r0` 30 k on that same 10 k divider.
+`NTC_DEFAULT_CAL` is a generic 10 k Beta-3950 part.
 Above ~500 kΩ the probe reads as open and below 200 Ω as shorted; either raises
 `FAULT_TEMP_SENSOR` and the heater is refused.
 
