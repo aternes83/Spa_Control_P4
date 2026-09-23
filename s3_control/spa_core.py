@@ -132,6 +132,20 @@ class SpaController:
         self.default_run_ms = 4 * 60 * 60 * 1000
         self.light_run_ms = 60 * 60 * 1000         # 60-minute light runtime
 
+        # Runtime ceiling on the high-flow pumps, so a tub left with the jets on
+        # does not run them all night. Pump 1 LOW is deliberately not on it: that
+        # is the circulation pump the thermostat and freeze protection depend on,
+        # and it has to be able to run indefinitely.
+        #
+        # Same shape as light_run_ms — the clock starts when the request goes
+        # true and only releasing the request restarts it. A panel that holds the
+        # request therefore stops at the ceiling and stays stopped until someone
+        # toggles it off and on, which is the intent: 20 minutes per press.
+        #
+        # None removes the ceiling. v2.0 had none, which is why the differential
+        # test clears it.
+        self.pump_run_ms = 20 * 60 * 1000          # 20-minute high-flow runtime
+
         # Status/fault outputs
         self.x_fault = False
         self.i_fault_code = FAULT_NONE
@@ -153,6 +167,7 @@ class SpaController:
         self._thermostat = ThermostatHeat()
         self._run_timer_start_ms = None
         self._light_timer_start_ms = None
+        self._timer_starts = {}                    # see _ceiling_reached()
 
     # ── Timer introspection, for MSG_TIMERS ──────────────────────────────────
     def spa_remaining_s(self):
@@ -166,6 +181,28 @@ class SpaController:
             return 0
         left = self.light_run_ms - ticks_diff(ticks_ms(), self._light_timer_start_ms)
         return max(0, left // 1000)
+
+    def pump_remaining_s(self, name):
+        """Seconds left on a high-flow pump's ceiling. 0 when it is not running
+        or has no ceiling. name is "pump1_high", "pump2" or "pump3"."""
+        start = self._timer_starts.get(name)
+        if start is None or self.pump_run_ms is None:
+            return 0
+        return max(0, (self.pump_run_ms - ticks_diff(ticks_ms(), start)) // 1000)
+
+    def _ceiling_reached(self, name, requested, run_ms, now):
+        """Request-driven runtime ceiling. The clock starts when the request goes
+        true; dropping the request clears it, so only a release buys more time.
+        Returns True once the ceiling is hit, and the caller withholds the
+        output — the request itself is left alone, so the panel still shows what
+        was asked for."""
+        if not requested:
+            self._timer_starts[name] = None
+            return False
+        start = self._timer_starts.get(name)
+        if start is None:
+            self._timer_starts[name] = start = now
+        return run_ms is not None and ticks_diff(now, start) >= run_ms
 
     def step(self, inputs):
         x_spa_enable_cmd = bool(inputs.get("xSpaEnable", False))
@@ -222,14 +259,24 @@ class SpaController:
 
         x_heat_active = r_water_temp_f < self.temp_setpoint_f
 
-        x_pump1_high = x_permissive and x_pump1_high_request
+        # 20-minute ceiling on the high-flow pumps; see pump_run_ms. Pump 1 low
+        # is left uncapped so the thermostat and freeze protection keep their
+        # circulation, and it picks up automatically when high speed times out.
+        p1h_done = self._ceiling_reached("pump1_high", x_pump1_high_request,
+                                         self.pump_run_ms, now)
+        p2_done = self._ceiling_reached("pump2", x_pump2_request,
+                                        self.pump_run_ms, now)
+        p3_done = self._ceiling_reached("pump3", x_pump3_request,
+                                        self.pump_run_ms, now)
+
+        x_pump1_high = x_permissive and x_pump1_high_request and (not p1h_done)
         x_pump1_low = (
             (x_freeze_permissive and x_heat_active)   # thermostat circulation
             or (x_permissive and x_pump_request)      # manual LOW request
         ) and (not x_pump1_high)
 
-        x_pump2 = x_permissive and x_pump2_request
-        x_pump3 = x_permissive and x_pump3_request
+        x_pump2 = x_permissive and x_pump2_request and (not p2_done)
+        x_pump3 = x_permissive and x_pump3_request and (not p3_done)
         x_any_pump = x_pump1_low or x_pump1_high or x_pump2 or x_pump3
 
         flow_proven = self._flow_prove.update(x_any_pump and x_flow_switch)

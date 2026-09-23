@@ -209,6 +209,7 @@ def differential_against_original():
         a = old.SpaController()
         b = spa_core.SpaController()
         b.flow_fault_latch = False   # diff against v2.0 semantics, not the fix
+        b.pump_run_ms = None         # v2.0 has no high-flow ceiling either
         state = {k: rng.random() < 0.5 for k in bools}
         state["rWaterTemp_F"] = rng.uniform(35.0, 115.0)
         for _ in range(400):
@@ -241,8 +242,78 @@ def differential_against_original():
           abs(b.light_remaining_s() - 3600) <= 1, b.light_remaining_s())
 
 
+def high_flow_run_ceiling():
+    print()
+    print("the 20-minute ceiling on the high-flow pumps")
+    clock = FakeClock()
+    clock.install(spa_core)
+
+    for name, req, out in (("pump1_high", "xPump1HighRequest", "xPump1_High"),
+                           ("pump2", "xPump2Request", "xPump2"),
+                           ("pump3", "xPump3Request", "xPump3")):
+        c = spa_core.SpaController()
+        state = dict(BASE, xSpaEnable=True, **{req: True})
+        o = c.step(dict(state))
+        check("%s starts when asked" % name, o[out], o[out])
+        check("%s reports 20 minutes left" % name,
+              abs(c.pump_remaining_s(name) - 20 * 60) <= 1,
+              c.pump_remaining_s(name))
+
+        run(c, clock, dict(state), 19 * 60 * 1000, step_ms=5000)
+        o = c.step(dict(state))
+        check("%s still running at 19 min" % name, o[out], o[out])
+
+        run(c, clock, dict(state), 90 * 1000, step_ms=5000)
+        o = c.step(dict(state))
+        check("%s stops once the ceiling is reached" % name, not o[out], o[out])
+        check("%s reports 0 s left" % name, c.pump_remaining_s(name) == 0,
+              c.pump_remaining_s(name))
+
+        # Holding the request must NOT buy more time; only a release does.
+        run(c, clock, dict(state), 60 * 1000, step_ms=5000)
+        o = c.step(dict(state))
+        check("%s stays off while the request is held" % name, not o[out], o[out])
+        o = c.step(dict(state, **{req: False}))
+        o = c.step(dict(state))
+        check("%s restarts after releasing and re-requesting" % name, o[out], o[out])
+
+    print()
+    print("what the ceiling must not do")
+    c = spa_core.SpaController()
+    # Cold water, so the thermostat wants heat and its circulation pump.
+    state = dict(BASE, xSpaEnable=True, rWaterTemp_F=80.0, xPumpRequest=True)
+    o = c.step(dict(state))
+    check("pump 1 low runs for the thermostat", o["xPump1_Low"], o)
+    run(c, clock, dict(state), 40 * 60 * 1000, step_ms=5000)
+    o = c.step(dict(state))
+    check("pump 1 low is still running after 40 min — it has no ceiling",
+          o["xPump1_Low"], o)
+    check("and the heater is still allowed", c.pump_remaining_s("pump1_low") == 0)
+
+    # High speed timing out must hand back to low, not stop circulation.
+    c = spa_core.SpaController()
+    state = dict(BASE, xSpaEnable=True, rWaterTemp_F=80.0,
+                 xPumpRequest=True, xPump1HighRequest=True)
+    o = c.step(dict(state))
+    check("high speed wins while both are asked", o["xPump1_High"]
+          and not o["xPump1_Low"], o)
+    run(c, clock, dict(state), 21 * 60 * 1000, step_ms=5000)
+    o = c.step(dict(state))
+    check("after the ceiling, low speed takes over",
+          o["xPump1_Low"] and not o["xPump1_High"], o)
+
+    c = spa_core.SpaController()
+    c.pump_run_ms = None
+    state = dict(BASE, xSpaEnable=True, xPump2Request=True)
+    c.step(dict(state))
+    run(c, clock, dict(state), 40 * 60 * 1000, step_ms=5000)
+    o = c.step(dict(state))
+    check("pump_run_ms = None removes the ceiling", o["xPump2"], o)
+
+
 def main():
     safety_properties()
+    high_flow_run_ceiling()
     differential_against_original()
     print()
     if FAILED:

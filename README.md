@@ -239,7 +239,18 @@ The control core is a port, not a rewrite: `SpaController`, `ThermostatHeat`,
 `OnDelay`, the two-tier permissive and the fault priority are unchanged, and the
 differential test holds them to that.
 
-One deliberate behavioural change, in `spa_core.flow_fault_latch`: in v2.0
+Two deliberate behavioural changes, both switchable back off.
+
+`spa_core.pump_run_ms` puts a **20-minute runtime ceiling** on pump 1 high,
+pump 2 and pump 3, so a tub left with the jets on does not run them all night.
+The clock starts when the request goes true and only releasing it restarts the
+clock, so a panel holding the request stops at the ceiling until someone toggles
+it — 20 minutes per press. Pump 1 **low** is deliberately uncapped: it is the
+circulation pump the thermostat and freeze protection depend on, and it takes
+over automatically when high speed times out. Set `pump_run_ms = None` for v2.0
+behaviour; the differential test does exactly that.
+
+The second, in `spa_core.flow_fault_latch`: in v2.0
 `FAULT_NO_FLOW` is unreachable. Its guard is `flow_proven and not xFlowSwitch`,
 but `flow_proven` is recomputed from `(any_pump and xFlowSwitch)` earlier in the
 same scan, so it is already false on the scan the flow switch opens. Losing flow
