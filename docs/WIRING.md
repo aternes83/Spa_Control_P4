@@ -209,6 +209,26 @@ terminated pair, at the cost of loading the drivers to 55 Ω against their 54 Ω
 minimum. With two nodes on a short cable, leaving the termination off is the
 better trade.
 
+### As built: the S3 end is terminated, deliberately
+
+The transceiver currently fitted at the S3 end is a **SparkFun BOB-10124**
+(SP3485 breakout), and it carries **`R4`, 220 Ω, hardwired across A/B**. Not a
+jumper, not a solder blob — a fixed part. This board cannot be run unterminated
+without removing it.
+
+Measured consequence, on this bench: idle bias **85 mV**, against **0.99 V** with
+the carrier's chain alone. That is inside the ±200 mV dead band, so between
+frames neither receiver has a defined state. Driven signalling is unaffected —
+220 Ω is a light load when RS-485 is specified down to 54 Ω — and the link runs
+clean with it, which is why it is still fitted.
+
+> **If `Bad CRC` or `Bad length` ever starts climbing, check `R4` first.** It is
+> the known weak point in this bus and the cheapest thing to rule out. Desolder
+> it and the carrier's own chain restores ~0.99 V of failsafe with no other
+> change. Everything else — baud, framing, the codec, the cable — has been
+> verified against working traffic; the idle bias has not, because it is
+> knowingly out of spec.
+
 `J4` carries **two** A/B pairs so nodes can be daisy-chained; they are the same
 net brought out twice.
 

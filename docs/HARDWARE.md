@@ -234,6 +234,10 @@ are about 1 % of a bit, so it costs nothing to leave off. **Leave both ends
 open, remove any resistor fitted on the S3 module, and expect ≈ +1.0 V across
 A/B at idle.** Measured on the bench at `J4`, cable unplugged: **0.992 V**,
 which back-solves to `USB5V_IN` = 4.88 V — an ordinary USB-C cable drop.
+**As built this bus IS terminated** — the SparkFun BOB-10124 at the S3 end
+carries a hardwired 220 Ω (`R4`) that cannot be jumpered off, holding the idle
+bias at 85 mV instead of 0.99 V. It is kept deliberately, because the link runs
+clean with it, but **it is the first thing to check if `Bad CRC` climbs**.
 Arithmetic and the terminated-bus fallback: [WIRING.md](WIRING.md) §4,
 *The bus*.
 
