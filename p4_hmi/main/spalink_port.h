@@ -21,7 +21,8 @@ typedef struct {
     int  tx_gpio;
     int  rx_gpio;
     int  baud;
-    bool rs485;   /* true for the on-board SP485E; see spalink_port_init() */
+    bool rs485;   /* true for the on-board SP485E. Note this does NOT put the
+                   * UART into half-duplex mode — see spalink_port_init(). */
 } spalink_port_cfg_t;
 
 /* Starts the receive task. Returns ESP_OK-style 0 on success. */
@@ -39,5 +40,15 @@ bool spalink_port_recv(spalink_msg_t *out);
 /* Framing errors seen since boot — worth a line on the diagnostics screen, since
  * a rising count is the first sign of a marginal cable or the wrong baud. */
 void spalink_port_stats(uint32_t *bad_crc, uint32_t *bad_len, uint32_t *rx_frames);
+
+/* Raw bytes received since boot, counted before framing. Separates "nothing is
+ * arriving" from "what arrives is too corrupt to delimit" — bad_crc reads zero
+ * in both cases, and they are different faults. */
+uint32_t spalink_port_rx_bytes(void);
+
+/* Edges seen on the RX pad since boot, counted by a GPIO interrupt rather than
+ * by the UART. Separates "the signal never reaches the pin" from "the pin sees
+ * it and the peripheral does not". */
+uint32_t spalink_port_rx_edges(void);
 
 #endif /* SPALINK_PORT_H */

@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -21,6 +22,29 @@ static portMUX_TYPE  s_seq_lock = portMUX_INITIALIZER_UNLOCKED;
 static spalink_decoder_t s_dec;
 static uint32_t s_rx_frames;
 
+/* Raw bytes off the wire, counted before framing. bad_crc only counts frames
+ * the decoder managed to delimit, so it reads zero both when nothing arrives
+ * and when what arrives is too mangled to start a frame — different faults
+ * that look identical without this. */
+static uint32_t s_rx_bytes;
+
+/* Edges on the RX pad, counted by a GPIO interrupt rather than by the UART. The
+ * GPIO input path stays live while the pin is muxed to a peripheral, so this
+ * reports what physically arrives at the pin whatever the UART makes of it.
+ *
+ * With the two above it separates the three cases that a dead link collapses
+ * into: no edges means nothing reaches the pin; edges without bytes means the
+ * signal is there and the UART cannot sample it; bytes without frames means it
+ * samples fine and the framing is wrong. Bringing this link up cost a day for
+ * want of exactly that distinction. */
+static volatile uint32_t s_rx_edges;
+
+static void IRAM_ATTR rx_pin_isr(void *arg)
+{
+    (void)arg;
+    s_rx_edges++;
+}
+
 static void rx_task(void *arg)
 {
     (void)arg;
@@ -29,6 +53,9 @@ static void rx_task(void *arg)
 
     for (;;) {
         int n = uart_read_bytes(s_uart, buf, sizeof(buf), pdMS_TO_TICKS(20));
+        if (n > 0) {
+            s_rx_bytes += (uint32_t)n;
+        }
         for (int i = 0; i < n; i++) {
             if (!spalink_decoder_feed(&s_dec, buf[i], &msg)) {
                 continue;
@@ -72,14 +99,38 @@ int spalink_port_init(const spalink_port_cfg_t *cfg)
                        UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (err) return err;
 
+    /* Count edges on the RX pad. Attaching a GPIO interrupt to a pin the UART
+     * owns is fine: the mux hands the pad to the peripheral, but the GPIO input
+     * path still sees it. ESP_ERR_INVALID_STATE only means something else
+     * installed the ISR service first. */
+    gpio_set_intr_type(cfg->rx_gpio, GPIO_INTR_ANYEDGE);
+    int isr_err = gpio_install_isr_service(0);
+    if (isr_err != 0 && isr_err != ESP_ERR_INVALID_STATE) {
+        return isr_err;
+    }
+    gpio_isr_handler_add(cfg->rx_gpio, rx_pin_isr, NULL);
+    gpio_intr_enable(cfg->rx_gpio);
+
     if (cfg->rs485) {
-        /* Half-duplex mode still earns its place with no RTS pin: it stops the
-         * UART receiving its own transmission. The hardware already disables the
-         * receiver while the driver is on (RE is tied to DE), so this is belt
-         * and braces — but a self-echo would show up as phantom frames, and
-         * those are tedious to chase. */
+#ifdef SPALINK_UART_RS485_MODE
         err = uart_set_mode(cfg->uart_num, UART_MODE_RS485_HALF_DUPLEX);
         if (err) return err;
+#else
+        /* Not switching the UART into RS-485 half-duplex mode, although the
+         * transceiver is one. Define SPALINK_UART_RS485_MODE to put it back.
+         *
+         * Its only job here was self-echo suppression, and that is redundant:
+         * the carrier drives DE//RE from the TX line through U7/U9 (sheet 5),
+         * so the receiver is off while the driver is on, in hardware. The
+         * diagnostics screen agrees — Self echo has never left 0.
+         *
+         * Worth being honest about why this changed. It was tried as a fix for
+         * a receive path that had never decoded a frame, on the theory that
+         * IDF's half-duplex mode was gating the receiver. It was not: the fault
+         * was a short from A to VCC on the far node, and plain mode made no
+         * difference. It is kept because the simpler configuration is the
+         * better default, not because it fixed anything. */
+#endif
     }
 
     s_uart = cfg->uart_num;
@@ -88,7 +139,13 @@ int spalink_port_init(const spalink_port_cfg_t *cfg)
     }
     ESP_LOGI(TAG, "link up on uart%d tx=%d rx=%d @%d (%s)",
              cfg->uart_num, cfg->tx_gpio, cfg->rx_gpio, cfg->baud,
-             cfg->rs485 ? "RS485 half-duplex" : "TTL");
+             cfg->rs485 ?
+#ifdef SPALINK_UART_RS485_MODE
+                 "RS485, uart in half-duplex mode"
+#else
+                 "RS485, uart in plain mode"
+#endif
+                 : "TTL");
     return 0;
 }
 
@@ -115,6 +172,16 @@ bool spalink_port_recv(spalink_msg_t *out)
         return false;
     }
     return xQueueReceive(s_rx_queue, out, 0) == pdTRUE;
+}
+
+uint32_t spalink_port_rx_bytes(void)
+{
+    return s_rx_bytes;
+}
+
+uint32_t spalink_port_rx_edges(void)
+{
+    return s_rx_edges;
 }
 
 void spalink_port_stats(uint32_t *bad_crc, uint32_t *bad_len, uint32_t *rx_frames)

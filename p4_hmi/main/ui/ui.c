@@ -765,10 +765,15 @@ void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
     if (!lv_obj_has_flag(s_diag, LV_OBJ_FLAG_HIDDEN)) {
         uint32_t bad_crc = 0, bad_len = 0, frames = 0;
         spalink_port_stats(&bad_crc, &bad_len, &frames);
+        uint32_t rx_bytes = spalink_port_rx_bytes();
+        uint32_t rx_edges = spalink_port_rx_edges();
         lv_label_set_text_fmt(s_diag_text,
                               "Link        %s\n"
                               "Silent for  %lu ms\n"
+                              "RX edges    %lu\n"
+                              "Bytes in    %lu\n"
                               "Frames in   %lu\n"
+                              "Self echo   %lu\n"
                               "Bad CRC     %lu\n"
                               "Bad length  %lu\n"
                               "Peer proto  %u\n"
@@ -779,7 +784,10 @@ void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
                               "Inputs      0x%02x",
                               s->link_up ? "up" : "DOWN",
                               (unsigned long)s->stale_ms,
+                              (unsigned long)rx_edges,
+                              (unsigned long)rx_bytes,
                               (unsigned long)frames,
+                              (unsigned long)s->self_echo,
                               (unsigned long)bad_crc,
                               (unsigned long)bad_len,
                               s->peer_proto, s->peer_fw_major, s->peer_fw_minor,
