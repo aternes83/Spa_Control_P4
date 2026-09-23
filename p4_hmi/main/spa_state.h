@@ -9,6 +9,10 @@
  * claims are stale. The UI must render stale state as stale — greyed, with the
  * connection called out — instead of confidently showing a heater that may well
  * have shut off minutes ago.
+ *
+ * `link_up` means "the S3 spoke recently", not "a frame arrived recently". The
+ * two are not the same on a half-duplex bus, where this panel can hear itself;
+ * see spa_state_apply() and `self_echo`.
  */
 #ifndef SPA_STATE_H
 #define SPA_STATE_H
@@ -54,7 +58,12 @@ typedef struct {
     bool     link_up;
     bool     ever_connected;   /* false until the first frame since boot */
     uint32_t last_rx_ms;
-    uint32_t rx_frames;
+    uint32_t rx_frames;        /* every CRC-valid frame, echoes included */
+    /* Frames carrying an id this panel itself sends — see spa_state_apply().
+     * Nonzero means the wire is looping back: a transceiver whose driver-enable
+     * is stuck on, an auto-direction circuit releasing late, or a bench
+     * loopback. If this tracks rx_frames, the S3 is not in the conversation. */
+    uint32_t self_echo;
     uint32_t stale_ms;         /* how long the data on screen has been stale */
 } spa_state_t;
 

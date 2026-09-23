@@ -137,15 +137,24 @@ class CanTransport:
 
 
 class LinkSession:
-    """Owns sequence numbers, ACKs and liveness for one peer."""
+    """Owns sequence numbers, ACKs and liveness for one peer.
 
-    def __init__(self, transport, timeout_ms=LINK_TIMEOUT_MS):
+    own_dir names the direction THIS node transmits, so the session can tell the
+    peer's traffic from its own coming back off the half-duplex pair. It
+    defaults to DIR_CONTROL because this module runs on the S3; the P4 applies
+    the mirror of this rule in spa_state_apply().
+    """
+
+    def __init__(self, transport, timeout_ms=LINK_TIMEOUT_MS,
+                 own_dir=codec.DIR_CONTROL):
         self.t = transport
         self.timeout_ms = timeout_ms
+        self.own_dir = own_dir
         self._seq = 0
         self._last_rx_ms = None      # None = never heard from the peer since boot
         self.rx_count = 0
         self.tx_count = 0
+        self.echo_count = 0          # our own frames, heard back off the wire
 
     # ── Outbound ─────────────────────────────────────────────────────────────
     def _next_seq(self):
@@ -165,10 +174,28 @@ class LinkSession:
 
     # ── Inbound ──────────────────────────────────────────────────────────────
     def poll(self):
-        """Returns the messages received this cycle, after answering any that
-        asked for an ACK. Marks the link alive on any valid frame."""
+        """Returns the messages the PEER sent this cycle, after answering any
+        that asked for an ACK. Marks the link alive on each of them.
+
+        Frames carrying an id this node itself sends are dropped here, before
+        they can do either. On a half-duplex pair they are not hypothetical: a
+        driver-enable stuck on, an auto-direction circuit that releases late, or
+        a bench loopback all put our own STATUS back in our own receiver,
+        CRC-valid and decoding perfectly.
+
+        Letting one through costs twice. It refreshes the liveness clock, so
+        is_up() stays true and main.py never falls back to failsafe_requests() —
+        the S3 keeps running jets on requests the HMI stopped sending, which is
+        the one thing the link watchdog exists to prevent. And it reaches the
+        dispatch in main.py, where our own STATUS/TEMP/TIMERS/HELLO are not ids
+        the S3 expects to *receive*, so each one is answered with a NACK — one
+        more frame on the wire, echoed in turn, at 5 Hz.
+        """
         out = []
         for msg_id, hdr, payload in self.t.poll():
+            if codec.msg_dir(msg_id) == self.own_dir:
+                self.echo_count += 1
+                continue
             self._last_rx_ms = _ticks_ms()
             self.rx_count += 1
             if hdr & codec.FLAG_ACK:

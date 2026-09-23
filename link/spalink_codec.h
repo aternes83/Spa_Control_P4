@@ -48,6 +48,17 @@
 #define SPALINK_NACK_UNKNOWN_ID 2
 #define SPALINK_NACK_REFUSED    3
 
+/* Which node originates each id. The link is half-duplex and both nodes share
+ * one pair, so a frame arriving at a node can be that node's own transmission
+ * coming back off the wire — a stuck driver-enable, an auto-direction circuit
+ * that releases too early, or a TTL loopback on the bench. An echo is CRC-valid
+ * and decodes perfectly, which is what makes it dangerous: without this a node
+ * counts its own voice as proof the peer is alive. See spa_state_apply(). */
+#define SPALINK_DIR_UNKNOWN 0   /* not a SpaLink id */
+#define SPALINK_DIR_ANY     1   /* ACK/NACK: either node may send these */
+#define SPALINK_DIR_CONTROL 2   /* S3 -> P4 */
+#define SPALINK_DIR_HMI     3   /* P4 -> S3 */
+
 /* STATUS byte 0 — outputs */
 #define SPALINK_OUT_PUMP1_LOW  0x01
 #define SPALINK_OUT_PUMP1_HIGH 0x02
@@ -104,6 +115,11 @@ typedef struct {
 } spalink_decoder_t;
 
 uint16_t spalink_crc16(const uint8_t *data, size_t len);
+
+/* Which node sends this id; SPALINK_DIR_UNKNOWN for anything not in the
+ * protocol. Must agree with spalink_codec.msg_dir() — tools/test_spalink.py
+ * checks every id in both implementations. */
+uint8_t spalink_msg_dir(uint8_t msg_id);
 
 /* Encode one message into out (>= SPALINK_MAX_FRAME bytes).
  * Returns the framed length, or 0 if payload_len exceeds SPALINK_MAX_PAYLOAD. */

@@ -15,6 +15,27 @@ uint16_t spalink_crc16(const uint8_t *data, size_t len)
     return crc;
 }
 
+uint8_t spalink_msg_dir(uint8_t msg_id)
+{
+    switch (msg_id) {
+    case SPALINK_MSG_ACK:
+    case SPALINK_MSG_NACK:
+        return SPALINK_DIR_ANY;
+    case SPALINK_MSG_STATUS:
+    case SPALINK_MSG_TEMP:
+    case SPALINK_MSG_TIMERS:
+    case SPALINK_MSG_HELLO:
+        return SPALINK_DIR_CONTROL;
+    case SPALINK_MSG_REQ:
+    case SPALINK_MSG_SETPOINT:
+    case SPALINK_MSG_PING:
+    case SPALINK_MSG_CLEAR_FAULT:
+        return SPALINK_DIR_HMI;
+    default:
+        return SPALINK_DIR_UNKNOWN;
+    }
+}
+
 static size_t stuff(uint8_t *out, size_t n, uint8_t byte)
 {
     if (byte == SPALINK_SOF || byte == SPALINK_ESC) {

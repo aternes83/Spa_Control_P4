@@ -116,6 +116,41 @@ command path are the same mechanism — they cannot drift apart.
 A refused setpoint is NACKed rather than clamped: a silently clamped value would
 leave the screen showing a number the controller is not using.
 
+### Who may send what, and why it matters
+
+Every id belongs to exactly one sender, except `ACK` and `NACK`:
+
+| direction | ids | sender |
+|---|---|---|
+| `DIR_CONTROL` | `0x10`–`0x13` | S3 only |
+| `DIR_HMI` | `0x20`–`0x23` | P4 only |
+| `DIR_ANY` | `0x01`, `0x02` | either |
+
+This is not bookkeeping. The link is half-duplex — one pair, both nodes — so a
+node can hear its own transmission come back: a transceiver whose driver-enable
+is stuck asserted, an auto-direction circuit that releases late, or a plain TTL
+loopback while a bench is being brought up. **An echoed frame is CRC-valid and
+decodes perfectly.** Nothing below this layer can tell it from the peer.
+
+So each side drops frames carrying ids *it* sends, before they can prove
+anything: `spalink_msg_dir()` in the C codec, `msg_dir()` in the Python one,
+cross-checked over all 256 ids by `tools/test_spalink.py`. The two places that
+apply the rule are `LinkSession.poll()` on the S3 and `spa_state_apply()` on the
+P4, and each keeps a counter — `echo_count` and `spa_state_t.self_echo` — that
+is the fastest way to identify a looped-back pair.
+
+Counting an echo as a heartbeat is worse than it sounds in both directions. On
+the P4 the link indicator goes green while no `STATUS` has ever arrived, so the
+dial sits on `--` and every tile refuses to confirm: it looks like a broken UI
+rather than a broken wire. On the S3 it holds `is_up()` true, so
+`failsafe_requests()` never fires and the board keeps running jets on requests
+the HMI stopped sending — the exact thing the link watchdog exists to prevent —
+while NACKing its own `STATUS` at 5 Hz as an unknown id.
+
+Ids outside the table are *not* treated as echo. They are not the receiver's own
+voice, and a message a future firmware adds must still read as a live peer to an
+older node.
+
 ## Timing
 
 | what | value | why |
@@ -137,6 +172,10 @@ must never mean losing freeze protection on a winter night.
 **P4 loses the link.** Keeps the last known values on screen but marks them
 stale (`spa_state_t.link_up`, `.stale_ms`) and greys them. It never invents a
 reading and never assumes a button press took effect.
+
+**A node hears itself.** The frame is dropped before it can refresh the liveness
+clock or reach the dispatch, and counted in `self_echo` / `echo_count`. Neither
+end treats it as contact. See *Who may send what* above.
 
 **Corrupt frame.** Dropped silently; counted in `bad_crc` / `bad_len`. There is
 no retransmission because there is nothing worth retransmitting — state is

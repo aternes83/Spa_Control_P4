@@ -7,6 +7,7 @@
  *   E <msg_id> <hdr> <payload_hex> -> UART-framed hex ("ERR" if rejected)
  *   D <hex stream>                -> "<msg_id> <hdr> <payload_hex>" per frame
  *                                    recovered, then "bad_crc=<n> bad_len=<n>"
+ *   R <msg_id>                    -> spalink_msg_dir(), as a decimal SPALINK_DIR_*
  */
 #include "../link/spalink_codec.h"
 
@@ -68,6 +69,13 @@ int main(void)
                 }
             }
             printf("bad_crc=%u bad_len=%u\n", (unsigned)d.bad_crc, (unsigned)d.bad_len);
+        } else if (cmd == 'R') {
+            unsigned id = 0;
+            if (sscanf(rest, "%x", &id) == 1) {
+                printf("%u\n", (unsigned)spalink_msg_dir((uint8_t)id));
+            } else {
+                printf("ERR\n");
+            }
         }
         fflush(stdout);
     }

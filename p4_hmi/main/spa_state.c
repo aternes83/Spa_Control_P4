@@ -21,8 +21,23 @@ int spa_state_setpoint_f(const spa_state_t *s) { return round_half_away(s->setpo
 
 bool spa_state_apply(spa_state_t *s, const spalink_msg_t *m, uint32_t now_ms)
 {
-    s->last_rx_ms = now_ms;
     s->rx_frames++;
+
+    /* REQ, SETPOINT, PING and CLEAR_FAULT are ids only this panel sends. One
+     * arriving here did not come from the S3; it is this panel's own frame back
+     * off the half-duplex pair. Counting it as a heartbeat is how a link that
+     * has never heard the control board shows green, with the dial on "--" and
+     * every tile refusing to confirm — the failure looks like a broken UI
+     * rather than a broken wire. Count it and say nothing happened.
+     *
+     * Unknown ids are left alone: they are not this panel's voice, and a future
+     * S3 message must not stop looking like a live peer to an older panel. */
+    if (spalink_msg_dir(m->msg_id) == SPALINK_DIR_HMI) {
+        s->self_echo++;
+        return false;
+    }
+
+    s->last_rx_ms = now_ms;
     s->stale_ms = 0;
     bool changed = !s->link_up || !s->ever_connected;
     s->link_up = true;

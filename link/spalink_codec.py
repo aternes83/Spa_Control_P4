@@ -44,6 +44,39 @@ NACK_BAD_LEN    = 1
 NACK_UNKNOWN_ID = 2
 NACK_REFUSED    = 3     # understood, but rejected (e.g. setpoint out of range)
 
+# ── Which node originates each id ────────────────────────────────────────────
+# The link is half-duplex and both nodes share one pair, so a frame arriving at
+# a node can be that node's own transmission coming back off the wire: a
+# transceiver whose driver-enable is stuck on, an auto-direction circuit that
+# releases too early, or simply a direct TTL loopback while bringing a bench up.
+#
+# An echoed frame is CRC-valid and decodes perfectly, which is exactly what
+# makes it dangerous: without this table each side counts its own voice as proof
+# the peer is alive. See LinkSession.poll() and p4_hmi/main/spa_state.c for the
+# two places that rule is applied.
+DIR_UNKNOWN = 0   # not a SpaLink id — a foreign device, or a future message
+DIR_ANY     = 1   # ACK/NACK: either node may send these
+DIR_CONTROL = 2   # S3 -> P4
+DIR_HMI     = 3   # P4 -> S3
+
+_DIR = {
+    MSG_ACK:         DIR_ANY,
+    MSG_NACK:        DIR_ANY,
+    MSG_STATUS:      DIR_CONTROL,
+    MSG_TEMP:        DIR_CONTROL,
+    MSG_TIMERS:      DIR_CONTROL,
+    MSG_HELLO:       DIR_CONTROL,
+    MSG_REQ:         DIR_HMI,
+    MSG_SETPOINT:    DIR_HMI,
+    MSG_PING:        DIR_HMI,
+    MSG_CLEAR_FAULT: DIR_HMI,
+}
+
+
+def msg_dir(msg_id):
+    """Which node sends this id. DIR_UNKNOWN for anything not in the protocol."""
+    return _DIR.get(msg_id, DIR_UNKNOWN)
+
 # ── Bitfields ────────────────────────────────────────────────────────────────
 # MSG_STATUS byte 0 — physical outputs, mirrors the S3's OUT dict
 OUT_PUMP1_LOW  = 0x01

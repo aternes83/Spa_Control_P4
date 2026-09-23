@@ -121,6 +121,53 @@ int main(void)
     check("any frame brings the link back", spa_state_apply(&s, &m, 4000) && s.link_up, 0);
     check("stale_ms resets on reconnect", s.stale_ms == 0, s.stale_ms);
 
+    /* The panel shares one half-duplex pair with the S3, so it can hear its own
+     * transmissions. An echoed frame is CRC-valid and decodes perfectly —
+     * nothing below this layer can tell it apart. The one thing that gives it
+     * away is the id: REQ, SETPOINT, PING and CLEAR_FAULT are only ever sent by
+     * this panel, so hearing one is proof of a loopback, not of a peer. */
+    printf("self-echo\n");
+    spa_state_init(&s);
+    uint8_t req[2] = { SPALINK_REQ_JETS, 0 };
+    m = msg(SPALINK_MSG_REQ, req, 2);
+    check("our own REQ does not bring the link up",
+          !spa_state_apply(&s, &m, 1000) && !s.link_up, s.link_up);
+    check("...nor claim the panel has ever been connected",
+          !s.ever_connected, s.ever_connected);
+    check("...but it is counted, so the screen can say why",
+          s.self_echo == 1 && s.rx_frames == 1, (long)s.self_echo);
+
+    m = msg(SPALINK_MSG_SETPOINT, req, 2);
+    spa_state_apply(&s, &m, 1100);
+    m = msg(SPALINK_MSG_PING, req, 0);
+    spa_state_apply(&s, &m, 1200);
+    m = msg(SPALINK_MSG_CLEAR_FAULT, req, 0);
+    spa_state_apply(&s, &m, 1300);
+    check("every id this panel sends is treated the same way",
+          s.self_echo == 4 && !s.link_up, (long)s.self_echo);
+    check("a tick over an echo-only link still reports no connection",
+          !spa_state_tick(&s, 9000, 1500) && !s.link_up, s.link_up);
+
+    /* The S3 speaking must still work through the same loopback. */
+    m = msg(SPALINK_MSG_STATUS, st, 3);
+    check("a real STATUS on the same wire still connects",
+          spa_state_apply(&s, &m, 1400) && s.link_up && s.ever_connected, 0);
+    m = msg(SPALINK_MSG_REQ, req, 2);
+    spa_state_apply(&s, &m, 1500);
+    check("an echo afterwards does not refresh the liveness clock",
+          spa_state_tick(&s, 1400 + 1501, 1500) && !s.link_up, s.stale_ms);
+    check("echoes are counted while the link is up too",
+          s.self_echo == 5, (long)s.self_echo);
+
+    /* Unknown ids are deliberately not treated as echo: they are not this
+     * panel's voice, and a message a future S3 adds must still look like a live
+     * peer to an older panel. */
+    spa_state_init(&s);
+    m = msg(0x7F, req, 2);
+    check("an id outside the protocol still counts as liveness",
+          spa_state_apply(&s, &m, 1000) && s.link_up, s.link_up);
+    check("...and is not mistaken for an echo", s.self_echo == 0, (long)s.self_echo);
+
     /* The clock wraps every ~49 days; the tub runs longer than that. */
     printf("clock wrap\n");
     spa_state_init(&s);

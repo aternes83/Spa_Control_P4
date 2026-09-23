@@ -268,6 +268,34 @@ generated — one `lv_font_conv` run per size, and the command is in `ui_theme.h
 beside the `UI_FONT_BOLD` switch. The layout is already final; only the weight
 changes when the files appear.
 
+## The diagnostics screen
+
+**Press and hold the link indicator in the header for 1.5 s.** There is no
+button for it: it is a service screen, and a permanent icon would be one more
+thing on a line that has to read at a glance. Holding the link status to ask
+about the link is where somebody would look anyway.
+
+| line | source | what a bad value means |
+|---|---|---|
+| `Frames in` | `spalink_port_stats()` | every CRC-valid frame, echoes included |
+| `Self echo` | `spa_state_t.self_echo` | frames carrying ids *this panel* sends — the pair is looping back |
+| `Bad CRC` / `Bad length` | decoder counters | the wire is live but the bytes are wrong: bias, termination, baud, or a collision |
+| `Peer proto` / `Peer fw` | `MSG_HELLO` only | still `0` / `0.0` means no `HELLO` has **ever** arrived — the S3 has not been heard at all |
+
+Those four lines separate the failures that otherwise look identical from the
+front of the panel:
+
+* `Frames in` climbing, `Self echo` climbing with it, `Peer fw 0.0` — the panel
+  is hearing itself. Check the S3 transceiver's `DE`/`EN` pin and the pair.
+* `Frames in` at `0` — nothing is arriving. Wrong pins, no common ground, or the
+  S3 is not transmitting.
+* `Bad CRC` climbing — the S3 is talking and the physical layer is mangling it.
+* `Peer fw 0.1` — the S3 is being heard; the fault is above the link.
+
+The decisive check needs no instruments: **power the S3 off.** If the link
+indicator stays green and `Frames in` keeps climbing, the panel was never
+talking to the control board.
+
 ## The bench peer
 
 `CONFIG_SPA_HMI_BENCH_PEER`, **off by default**, stands a fake control board up

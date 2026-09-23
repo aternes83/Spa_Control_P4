@@ -127,6 +127,7 @@ def main():
     hmi_requests = link.failsafe_requests()
     modes = 0
     link_was_up = False
+    echo_warned = False
     setpoint_dirty = False
 
     now = ticks_ms()
@@ -178,8 +179,25 @@ def main():
 
         link_up = session.is_up()
         if link_up != link_was_up:
-            print("link: %s" % ("up" if link_up else "DOWN — failsafe requests"))
+            # The counters go out with the state change because this board has
+            # no screen: "DOWN" with rx=0 is a link that never worked, "DOWN"
+            # with rx climbing and crc climbing is a link that is failing now,
+            # and the two want different tools.
+            st = session.t.stats()
+            print("link: %s  rx=%d tx=%d echo=%d bad_crc=%d bad_len=%d" % (
+                "up" if link_up else "DOWN — failsafe requests",
+                session.rx_count, session.tx_count, session.echo_count,
+                st.get("bad_crc", 0), st.get("bad_len", 0)))
             link_was_up = link_up
+        if session.echo_count and not echo_warned:
+            # Once, loudly. Hearing our own frames means the pair is looping
+            # back — a driver-enable stuck on, or a bench loopback — and the P4
+            # cannot be heard at all while that is true. This used to present as
+            # a working link, because the echo refreshed the liveness clock.
+            echo_warned = True
+            print("link: hearing our own frames (%d). The pair is looping back; "
+                  "check the transceiver's DE/EN pin. The P4 is not being "
+                  "heard." % session.echo_count)
         if not link_up:
             hmi_requests = link.failsafe_requests()
             modes = 0

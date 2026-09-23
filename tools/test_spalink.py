@@ -51,6 +51,9 @@ class CCodec:
         r = self.run([line])[0]
         return None if r == "ERR" else bytes.fromhex(r)
 
+    def directions(self, ids):
+        return [int(x) for x in self.run(["R %02x" % i for i in ids])]
+
     def decode(self, stream):
         out = self.run(["D " + stream.hex()])
         msgs = []
@@ -163,6 +166,29 @@ def main():
     for b in bytes(frame):
         out.extend(d.feed(bytes([b])))
     check("python decodes across byte-at-a-time delivery", len(out) == 1)
+
+    # Both sides decide "is this frame mine, coming back off the wire?" from this
+    # table. If they disagreed, one board would silently accept its own echo as
+    # a heartbeat — the failure this table was added to make impossible — so it
+    # is cross-checked over the whole id space, not just the ten known ids.
+    print("message direction")
+    ids = list(range(256))
+    c_dirs = c.directions(ids)
+    py_dirs = [py.msg_dir(i) for i in ids]
+    bad = [(i, a, b) for i, a, b in zip(ids, py_dirs, c_dirs) if a != b]
+    check("direction agrees on all 256 ids", not bad, bad[:3])
+    check("the S3's four state messages are DIR_CONTROL",
+          all(py.msg_dir(i) == py.DIR_CONTROL
+              for i in (py.MSG_STATUS, py.MSG_TEMP, py.MSG_TIMERS, py.MSG_HELLO)))
+    check("the P4's four commands are DIR_HMI",
+          all(py.msg_dir(i) == py.DIR_HMI
+              for i in (py.MSG_REQ, py.MSG_SETPOINT, py.MSG_PING,
+                        py.MSG_CLEAR_FAULT)))
+    check("ACK and NACK belong to neither side alone",
+          py.msg_dir(py.MSG_ACK) == py.DIR_ANY and
+          py.msg_dir(py.MSG_NACK) == py.DIR_ANY)
+    check("an id outside the protocol is DIR_UNKNOWN",
+          py.msg_dir(0x00) == py.DIR_UNKNOWN and py.msg_dir(0x7F) == py.DIR_UNKNOWN)
 
     print("CAN mapping")
     ok = True

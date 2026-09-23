@@ -93,6 +93,50 @@ def main():
     s.poll()
     check("link recovers when the peer returns", s.is_up())
 
+    print("self-echo")
+    # The S3 and the P4 share one half-duplex pair, so the S3 can hear its own
+    # STATUS come back: a driver-enable stuck on, or a bench loopback. The frame
+    # is CRC-valid and decodes perfectly, so only the id gives it away.
+    t = LoopbackTransport()
+    s = session.LinkSession(t, timeout_ms=session.LINK_TIMEOUT_MS)
+    for mid in (codec.MSG_STATUS, codec.MSG_TEMP, codec.MSG_TIMERS, codec.MSG_HELLO):
+        # FLAG_ACK on the first one: an echo that asks for an acknowledgement is
+        # the pathological case, because answering it puts another frame on the
+        # wire to be echoed in turn.
+        hdr = 3 | (codec.FLAG_ACK if mid == codec.MSG_STATUS else 0)
+        t.peer_sends(mid, hdr, b"\x00\x00\x00")
+    msgs = s.poll()
+    check("our own frames do not bring the link up", not s.is_up())
+    check("...and never reach the dispatch, so they are never NACKed",
+          msgs == [], msgs)
+    check("...and are not acknowledged, even when they ask to be",
+          t.tx == [], t.tx)
+    check("...but are counted", s.echo_count == 4, s.echo_count)
+    check("...and are kept out of the peer's receive count",
+          s.rx_count == 0, s.rx_count)
+
+    # The P4 speaking must still work through the same loopback.
+    t.peer_sends(codec.MSG_REQ, 7, bytes([codec.REQ_JETS, 0]))
+    msgs = s.poll()
+    check("a real REQ on the same wire still connects", s.is_up())
+    check("...and still reaches the caller",
+          [m[0] for m in msgs] == [codec.MSG_REQ], msgs)
+
+    # The point of the whole exercise: an echo must not hold the watchdog open.
+    clock.t += session.LINK_TIMEOUT_MS - 1
+    t.peer_sends(codec.MSG_STATUS, 9, b"\x00\x00\x00")
+    s.poll()
+    clock.t += 2
+    check("an echo does not keep a dead link alive", not s.is_up())
+
+    # ACK/NACK are sent by both nodes, so they cannot be attributed by id alone
+    # and stay peer traffic. The P4 does not send them today, so this costs
+    # nothing now and stays correct if it ever starts.
+    t = LoopbackTransport()
+    s = session.LinkSession(t)
+    t.peer_sends(codec.MSG_ACK, codec.FLAG_RESP, bytes([1]))
+    check("an ACK is still treated as the peer", s.poll() and s.is_up())
+
     print("acknowledgement")
     t = LoopbackTransport()
     s = session.LinkSession(t)
