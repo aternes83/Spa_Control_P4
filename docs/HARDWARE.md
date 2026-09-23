@@ -207,7 +207,7 @@ can daisy-chain, protected by SMAJ6.5CA TVS clamps and 0.1 A resettable fuses.
 ```
 S3  GPIO47 TX ──┐                                       ┌── GPIO26  P4 UART1
 S3  GPIO48 RX ──┤ MAX3485 ══ A/B twisted pair ══ SP485E ─┤── GPIO27
-S3  GPIO1  DE ──┘  (add)      120 Ω each end    (fitted, self-directing)
+S3  GPIO1  DE ──┘  (add)      unterminated      (fitted, self-directing)
 ```
 
 **Fit a 3.3 V transceiver at the S3 end** — **`MAX3485CSA+`** (SOIC-8) is the
@@ -221,8 +221,93 @@ GPIO. The carrier gets away with that through `R70`, a 1 k series resistor into
 the P4's clamp diode. There is no reason to repeat it when the 3.3 V part costs
 the same.
 
-**Termination.** The carrier has bias resistors but no 120 Ω termination. Fit
-120 Ω across A/B at each end of the run.
+**Termination — none, and this one is worth reading before you fit any.** What
+the carrier has across A/B is an idle bias chain, not a termination: `R77` 10 kΩ
+from 5 V to `A`, `R73` 5.1 kΩ across the pair, `R68` 10 kΩ from `B` to GND
+(sheet 5). It idles the bus at **1.02 V**, which is the failsafe both receivers
+need — neither part has one built in, and both are undefined between ±200 mV. A
+120 Ω across the pair is forty times stiffer than the 5.1 kΩ leg, so it does not
+add to that bias, it replaces it: two terminations collapse the idle to 15 mV,
+deep inside the dead band, where the receivers chatter and the UARTs count
+phantom bytes. At 115200 over a short run, the reflections termination would fix
+are about 1 % of a bit, so it costs nothing to leave off. **Leave both ends
+open, remove any resistor fitted on the S3 module, and expect ≈ +1.0 V across
+A/B at idle.** Measured on the bench at `J4`, cable unplugged: **0.992 V**,
+which back-solves to `USB5V_IN` = 4.88 V — an ordinary USB-C cable drop.
+Arithmetic and the terminated-bus fallback: [WIRING.md](WIRING.md) §4,
+*The bus*.
+
+**The RS-485 section is powered from `USB5V_IN`, which is not the rail the panel
+runs on.** This is the trap that costs an afternoon, because nothing about it
+looks like a link problem. Sheet 5 ties `U8`'s VCC, `U7`'s VCC and the bias
+pull-up `R77` to `USB5V_IN`. Sheet 1 shows what that net actually is: the
+**input** to the IP5306 charger at `U5`. The panel's own supply comes out the
+other side — `VOUT-BAT` → `VCC5V` → a TLV62569 buck → `VCC3V3`/`ESP_3V3` — and
+the IP5306 will produce `VOUT-BAT` by boosting from a battery on `CN4` with no
+input present at all.
+
+So a battery-powered panel boots, lights its screen, joins WiFi and serves MQTT
+**with the transceiver, the direction logic and the idle bias all unpowered**.
+A/B float at whatever the cable picks up, the S3 sees a peer that never answers,
+and every diagnostic points at the wire.
+
+`USB5V_IN` is fed by both USB-C connectors' VBUS (sheet 4) and by `CN2` pin 1
+through `Q2`, an AO3401 acting as reverse-polarity protection (sheet 1). **For
+the install, power the panel through one of those two paths** — not from a
+battery on `CN4` alone. It is worth confirming rather than assuming: `J4` pin 1
+*is* `USB5V_IN` and pin 4 is GND, so the rail is measurable at the same
+connector as the bus, without opening anything.
+
+**If the link is one-way, find out which way before anything else.** It is the
+question that saves the most time, because a link that works in one direction
+has already exonerated everything the two directions share: the pair, the
+connectors, the ground conductor, the bias chain and the termination. Whatever
+is wrong is in one node's driver or the other node's receiver, and nothing else
+needs checking until that is settled.
+
+Both ends will say, and neither needs a meter:
+
+* the S3 prints `link: up ...` on the transition, and *only* on the transition
+  (`s3_control/main.py:187`). No line at all means it never heard the P4 — not
+  that the link was quiet.
+* the P4 keeps a Diagnostics screen behind a 1.5 s press on the link indicator
+  (`UI_SERVICE_HOLD_MS`, `ui.c:768`). `Frames in`, `Self echo`, `Bad CRC` and
+  `Bad length` separate three cases the console cannot: nothing arriving at all,
+  bytes arriving corrupt, and frames arriving intact but rejected further up.
+
+`Bad CRC` climbing while `Frames in` stays at zero is the signature of a signal
+sitting inside the receiver's ±200 mV dead band — mostly unresolvable, and
+occasionally flipped by noise into something frame-shaped. It is not a framing
+bug and it is not the baud rate: a peer whose own transmissions decode cleanly
+at the far end has already proved its clock, because one divider serves both
+directions of the same UART.
+
+**A transceiver can be characterised with nothing but a DMM**, because every
+state worth seeing is DC. Drive `DI` and `EN` as plain GPIOs, bypassing the UART
+entirely, and measure A−B:
+
+| `EN` | `DI` | Healthy |
+|---|---|---|
+| 0 | any | the idle bias, ~1.0 V — driver off, pair held by the chain |
+| 1 | 1 | **+2 to +3 V**, driving a mark |
+| 1 | 0 | **−2 to −3 V**, driving a space |
+
+A reading that will not swing is a driver that is not driving. A reading *below*
+the idle bias is worse than that: the output stage is half-on in both legs and
+is loading the pair instead of driving it.
+
+Two more checks turn suspicion into a verdict. `EN` high must make the receiver
+go deaf, since `/RE` is tied to `DE` — if frames keep arriving with `EN`
+asserted, that pin is not reaching the chip, and confirming it needs no meter at
+all. And `VCC`, measured **at the module's own pins while the driver is
+enabled**, is the last alibi: a marginal supply joint carries the receiver's few
+hundred microamps happily and collapses under an output stage, which presents as
+a dead chip and is a solder joint.
+
+This build's fault was the transceiver itself — a `MAX3485ESA` marked `UMW`, a
+clone die under a correct part number, with a flawless receiver and a driver
+that never drove. Powered at 3.241 V, `EN` verified twice, `DI` continuity good,
+and 95 mV across a pair that should have been at three volts.
 
 **Bench alternative — TTL.** Build the P4 with `SPALINK_BENCH_TTL` to move the
 link to JP1 pins (GPIO32/33) and skip both transceivers. Optional: with the S3

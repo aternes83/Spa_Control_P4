@@ -205,9 +205,11 @@ layer was exercised against a simulated controller, not a real one.
 ## Next steps
 
 1. **Fit a 3.3 V RS-485 transceiver at the S3 end** (MAX3485 / SP3485 /
-   THVD1450), tie its DE//RE to `LINK_PINS["RS485_DE"]`, 120 Ω at each end. The
-   HMI end is already built and self-directing. Prove the physical layer with
-   the vendor's own `uart_echo_rs485` example before running any of our code.
+   THVD1450), tie its DE//RE to `LINK_PINS["RS485_DE"]`, and leave the pair
+   unterminated — the carrier's idle bias does not survive a 120 Ω across it,
+   and `docs/WIRING.md` §4 has the arithmetic. The HMI end is already built and
+   self-directing. Prove the physical layer with the vendor's own
+   `uart_echo_rs485` example before running any of our code.
 2. Bring up the link on the bench: three wires, both boards logging. The S3's
    `link: up` and the P4's `[up] water=... ` lines are the whole handshake. The
    P4 side of this is proven — it prints exactly that against a simulated peer —
@@ -228,7 +230,7 @@ layer was exercised against a simulated controller, not a real one.
    is left is the radio itself: prove association first, then publish, then
    subscribe.
 5. Move the link to RS-485 for the install: one transceiver at the S3 end, build
-   the P4 with `SPALINK_USE_RS485`, 120 Ω at each end of the pair. No protocol
+   the P4 with `SPALINK_USE_RS485`, no termination on the pair. No protocol
    change — see `docs/HARDWARE.md`.
 
 ## Inherited from openplc-hot-tub v2.0

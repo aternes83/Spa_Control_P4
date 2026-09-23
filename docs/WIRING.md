@@ -35,7 +35,7 @@ e-stop──┤ GPIO11        GPIO1  ──► DE ┘│════════
 |---:|---|---|
 | 1 | **MAX3485 breakout module** (`EN VCC RXD TXD GND GND A B`) | **3.3 V**. The S3 end — pin map in §4. A bare `MAX3485CSA+` SOIC-8 works too. |
 | 1 | 10 kΩ resistor | Pull-down on `EN`, so the module boots listening instead of jamming the bus. See §4. |
-| 2 | 120 Ω resistor, ¼ W | Bus termination, one at each end — **check the module first**, many have one fitted |
+| 0 | ~~120 Ω terminator~~ | **Not used on this link, and harmful here — see §4, *The bus*.** If your module has one fitted, take it off. |
 | 1 | Twisted pair, shielded (Cat5e is fine) | S3 → P4 run. One pair for A/B, plus a ground conductor |
 | 1 | 100 nF ceramic capacitor | Decoupling across VCC/GND. Modules usually have this already. |
 
@@ -119,8 +119,9 @@ Check the chip marking before powering it: the cheap blue modules sold as
 is the one substitution that quietly damages the S3.
 
 Many modules already carry a 120 Ω termination resistor across A/B, sometimes on
-a jumper. Look for it before adding your own, and see *The bus* below: this link
-has exactly two ends, so exactly two terminations.
+a jumper. **Find it and take it off.** This link runs unterminated: the
+carrier's idle bias cannot survive a 120 Ω across the pair, and what it fails
+into looks like a flaky link rather than a wiring error. See *The bus* below.
 
 ### If you have a bare SOIC-8 chip instead
 
@@ -153,20 +154,63 @@ there is no direction pin. The bus is on the 4-pin **`J4`** connector.
 
 ### The bus
 
+**Leave the pair unterminated at both ends.** Three wires, no resistors:
+
 ```text
    S3 end                                              P4 end (J4)
    ──────                                              ───────────
-   A ──┬──────────────  twisted pair  ──────────────┬── Ao
-       │                                            │
-      120Ω                                         120Ω
-       │                                            │
-   B ──┴────────────────────────────────────────────┴── Bo
+   A ─────────────────  twisted pair  ───────────────── Ao
 
-   GND ─────────────  third conductor  ─────────────── GND
+   B ────────────────────────────────────────────────── Bo
+
+   GND ───────────────  third conductor  ────────────── GND
 ```
 
-`J4` carries **two** A/B pairs so nodes can be daisy-chained. Terminate only the
-two physical ends of the bus — a 120 Ω at every node kills the signal.
+This is the opposite of the usual RS-485 advice, and it is specific to this
+link. What the carrier fits across A/B is not a termination but an idle bias
+chain (sheet 5): `R77` 10 kΩ from 5 V to `A`, `R73` 5.1 kΩ across the pair, and
+`R68` 10 kΩ from `B` to GND. Undriven, 199 µA flows through it and holds the
+pair at **1.02 V** — the failsafe that stops both receivers chattering while
+nobody is transmitting.
+
+A 120 Ω across the pair is forty times stiffer than that 5.1 kΩ leg, so it does
+not add to the bias. It replaces it:
+
+| Terminations fitted | Idle V(A−B) |
+|---:|---|
+| none | 1.02 V |
+| one | 29 mV |
+| two — the usual advice | 15 mV |
+
+Neither transceiver has an internal failsafe. Both switch on a ±200 mV receiver
+threshold, and between those thresholds the output is undefined. Terminated,
+this bus idles inside that dead band: the receivers chatter, the UARTs see
+phantom start bits, `bad_len` and `bad_crc` climb, and a phantom byte landing
+just ahead of a real frame eats its header. It presents as an unreliable link,
+never as a wiring error.
+
+Nothing is lost by leaving termination off. A bit at 115200 baud is 8.68 µs and
+cable delay is around 5 ns/m, so even a 20 m run is about 1 % of a bit — the
+reflections termination exists to kill have long settled before the sampling
+instant. It earns its keep at high baud or over long runs, and this link is
+neither.
+
+**Measure it rather than trusting it.** With the P4 powered and the S3 idle, a
+meter across `J4` should read **≈ +1.0 V from `Ao` to `Bo`**. A few millivolts
+means a termination is still on the bus somewhere — most often one fitted on the
+S3 module. About a volt the *wrong way* means A and B are swapped in the cable.
+Powered down, an ohmmeter across the pair reads several kΩ with nothing
+terminated, ~118 Ω with one 120 Ω fitted, and ~59 Ω with two.
+
+**If you ever do need termination** — a longer run, a faster baud, a third node
+— the bias has to be stiffened in the same breath or you land back here. 330 Ω
+from 3V3 to `A` and 330 Ω from `B` to GND at the S3 end restores 275 mV across a
+terminated pair, at the cost of loading the drivers to 55 Ω against their 54 Ω
+minimum. With two nodes on a short cable, leaving the termination off is the
+better trade.
+
+`J4` carries **two** A/B pairs so nodes can be daisy-chained; they are the same
+net brought out twice.
 
 ### Why 3.3 V, specifically
 
