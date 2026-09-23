@@ -23,6 +23,10 @@ ESP32-S3 constraints to respect when re-assigning:
 BOARD_REVISION = "spa-p4-s3-control-r1"
 
 # ── Digital inputs — pulled up, active-high by default ───────────────────────
+# The three interlock inputs. Kept named because they pull the opposite way to
+# the request inputs — see _init_io() in main.py and docs/WIRING.md section 5.
+SAFETY_INPUTS = ("xFlowSwitch", "xHighLimitOK", "xRemoteEStopOK")
+
 INPUT_PINS = {
     "xSpaEnable": 4,
     "xPumpRequest": 5,

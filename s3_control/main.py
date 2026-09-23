@@ -70,8 +70,23 @@ def _save_config(cfg):
 
 
 def _init_io():
-    ins = {name: Pin(gpio, Pin.IN, Pin.PULL_UP)
-           for name, gpio in bp.INPUT_PINS.items()}
+    """Request inputs pull DOWN, interlocks pull UP. The difference is
+    deliberate.
+
+    The panel switches source 3V3 (docs/WIRING.md section 5), so an open or
+    absent switch has to read as "not requested". With a pull-up it reads
+    asserted whether the switch is open or closed, which means a fitted switch
+    cannot do anything at all and a board with nothing wired boots asking for
+    every output at once — which is exactly what it did on the bench.
+
+    The interlocks keep the pull-up inherited from v2.0, so a cut wire still
+    reads OK. That is not safe, and it is why the hardware chain in section 6 is
+    not optional; flipping it is a deliberate change that also requires the
+    interlock contacts to source 3V3, so it stays with whoever wires them."""
+    ins = {}
+    for name, gpio in bp.INPUT_PINS.items():
+        pull = Pin.PULL_UP if name in bp.SAFETY_INPUTS else Pin.PULL_DOWN
+        ins[name] = Pin(gpio, Pin.IN, pull)
     outs = {name: Pin(gpio, Pin.OUT, value=0)
             for name, gpio in bp.OUTPUT_PINS.items()}
     return ins, outs

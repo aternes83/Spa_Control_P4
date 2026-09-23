@@ -230,7 +230,9 @@ S3's pin, nothing else.
 
 ## 5. Control inputs
 
-All inputs are `Pin.IN, Pin.PULL_UP` and read active-high: **HIGH = asserted**.
+All inputs read active-high: **HIGH = asserted**. The request inputs are
+`Pin.IN, Pin.PULL_DOWN`, so an open or absent switch reads as not requested.
+The three interlocks are `Pin.IN, Pin.PULL_UP` — see the warning below.
 
 ```text
                             3V3 ──┐
