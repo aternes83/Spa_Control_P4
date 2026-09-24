@@ -279,7 +279,7 @@ about the link is where somebody would look anyway.
 |---|---|---|
 | `Frames in` | `spalink_port_stats()` | every CRC-valid frame, echoes included |
 | `Self echo` | `spa_state_t.self_echo` | frames carrying ids *this panel* sends — the pair is looping back |
-| `Bad CRC` / `Bad length` | decoder counters | the wire is live but the bytes are wrong: bias, termination, baud, or a collision. **Check `R4` first** — the 220 Ω fitted across A/B on the S3's breakout holds the idle bias at 85 mV, inside the dead band. See WIRING.md §4. |
+| `Bad CRC` / `Bad length` | decoder counters | the wire is live but the bytes are wrong: bias, termination, baud, or a collision. The known offender here was `R4`, the 220 Ω across A/B on the S3's breakout, **removed 2026-09-24**. If these climb again, measure the idle bias at `J4` — ≈ 1.0 V is healthy, tens of mV means something is terminating the pair again. See WIRING.md §4. |
 | `Peer proto` / `Peer fw` | `MSG_HELLO` only | still `0` / `0.0` means no `HELLO` has **ever** arrived — the S3 has not been heard at all |
 
 Those four lines separate the failures that otherwise look identical from the

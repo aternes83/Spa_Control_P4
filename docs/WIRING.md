@@ -209,34 +209,39 @@ terminated pair, at the cost of loading the drivers to 55 Ω against their 54 Ω
 minimum. With two nodes on a short cable, leaving the termination off is the
 better trade.
 
-### As built: the S3 end is terminated, deliberately
+### As built: `R4` has been removed, the pair runs unterminated
 
-The transceiver currently fitted at the S3 end is a **SparkFun BOB-10124**
-(SP3485 breakout), and it carries **`R4`, 220 Ω, hardwired across A/B**. Not a
-jumper, not a solder blob — a fixed part. This board cannot be run unterminated
-without removing it.
+The transceiver fitted at the S3 end is a **SparkFun BOB-10124** (SP3485
+breakout). As it ships it carries **`R4`, 220 Ω hardwired across A/B** — not a
+jumper, not a solder blob, a fixed part — so out of the bag this board cannot be
+run unterminated. **`R4` has been desoldered (2026-09-24).** The bus as built now
+matches the section above: no termination at either end, biased only by the
+carrier's chain.
 
-Measured consequence, on this bench: idle bias **85 mV**, against **0.99 V** with
-the carrier's chain alone. That is inside the ±200 mV dead band, so between
-frames neither receiver has a defined state. Driven signalling is unaffected —
-220 Ω is a light load when RS-485 is specified down to 54 Ω — and the link runs
-clean with it, which is why it is still fitted.
+| | idle V(A−B) at `J4` |
+|---|---|
+| with `R4` fitted | 85 mV — inside the ±200 mV dead band |
+| `R4` removed (expected) | ≈ 0.99 V |
 
-> **If the link misbehaves in any way, check `R4` first.** It is
-> the known weak point in this bus and the cheapest thing to rule out. Desolder
-> it and the carrier's own chain restores ~0.99 V of failsafe with no other
-> change.
->
-> **Do not wait for `Bad CRC` to climb.** On the bench the symptom was the
-> opposite: `Bad CRC` and `Bad length` sat at 1 while the S3 received barely
-> half the frames the P4 sent, and `is_up()` flapped every few seconds. Frames
-> were not being corrupted, they were being missed — the receiver loses sync in
-> the dead band between frames and is still hunting when the next one starts, so
-> nothing ever reaches the decoder to be counted. Watch `rx` against the peer's
-> `tx`, and watch for link-state transitions; either is a better detector than
-> the CRC counters. Everything else — baud, framing, the codec, the cable — has been
-> verified against working traffic; the idle bias has not, because it is
-> knowingly out of spec.
+**Take that second reading before trusting it.** The 85 mV was measured; the
+0.99 V is what the carrier's chain gave on this bench before the SparkFun board
+was in the picture, so it is an expectation, not a measurement of the bus as it
+stands today. A meter across `J4` with the P4 powered and the S3 idle settles it
+in ten seconds, and it is the one number that says the removal did what it was
+meant to.
+
+> **Keep the symptom signature, in case another board comes in.** Any SP3485
+> breakout of this family is likely to arrive with the same part fitted, and the
+> failure it caused does not look like a termination fault from the front of the
+> panel. While `R4` was on the bus, `Bad CRC` and `Bad length` sat at **1** while
+> the S3 received barely half the frames the P4 sent, and `is_up()` flapped every
+> few seconds. Frames were not being corrupted, they were being missed — the
+> receiver loses sync in the dead band between frames and is still hunting when
+> the next one starts, so nothing ever reaches the decoder to be counted.
+> **Watch `rx` against the peer's `tx`, and watch for link-state transitions;
+> either is a better detector than the CRC counters.** If that pattern appears
+> again, measure the idle bias at `J4` first and check what is across A/B at the
+> S3 end.
 
 `J4` carries **two** A/B pairs so nodes can be daisy-chained; they are the same
 net brought out twice.
