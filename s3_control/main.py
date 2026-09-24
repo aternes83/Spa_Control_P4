@@ -222,7 +222,11 @@ def main():
             inputs[key] = bool(inputs.get(key, False)) or bool(value)
 
         # ── 3. Control core — never gated on the link ────────────────────────
-        outputs = ctrl.step(inputs)
+        # requests_valid says whether hmi_requests is the panel's actual wish or
+        # the failsafe substitute. The core needs the difference: a dropped link
+        # must stop the outputs, but must not read as the user releasing a
+        # button and hand the runtime ceilings a fresh 20 minutes.
+        outputs = ctrl.step(inputs, requests_valid=link_up)
 
         # ── 4. Drive the plant ───────────────────────────────────────────────
         for name, pin in outs.items():

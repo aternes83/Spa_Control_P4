@@ -222,10 +222,19 @@ frames neither receiver has a defined state. Driven signalling is unaffected —
 220 Ω is a light load when RS-485 is specified down to 54 Ω — and the link runs
 clean with it, which is why it is still fitted.
 
-> **If `Bad CRC` or `Bad length` ever starts climbing, check `R4` first.** It is
+> **If the link misbehaves in any way, check `R4` first.** It is
 > the known weak point in this bus and the cheapest thing to rule out. Desolder
 > it and the carrier's own chain restores ~0.99 V of failsafe with no other
-> change. Everything else — baud, framing, the codec, the cable — has been
+> change.
+>
+> **Do not wait for `Bad CRC` to climb.** On the bench the symptom was the
+> opposite: `Bad CRC` and `Bad length` sat at 1 while the S3 received barely
+> half the frames the P4 sent, and `is_up()` flapped every few seconds. Frames
+> were not being corrupted, they were being missed — the receiver loses sync in
+> the dead band between frames and is still hunting when the next one starts, so
+> nothing ever reaches the decoder to be counted. Watch `rx` against the peer's
+> `tx`, and watch for link-state transitions; either is a better detector than
+> the CRC counters. Everything else — baud, framing, the codec, the cable — has been
 > verified against working traffic; the idle bias has not, because it is
 > knowingly out of spec.
 

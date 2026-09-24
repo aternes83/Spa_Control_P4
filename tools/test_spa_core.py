@@ -60,11 +60,11 @@ BASE = {
 }
 
 
-def run(ctrl, clock, inputs, ms, step_ms=50):
+def run(ctrl, clock, inputs, ms, step_ms=50, requests_valid=True):
     """Hold inputs steady for ms, returning the final outputs."""
     out = None
     for _ in range(max(1, ms // step_ms)):
-        out = ctrl.step(inputs)
+        out = ctrl.step(inputs, requests_valid=requests_valid)
         clock.advance(step_ms)
     return out
 
@@ -309,6 +309,36 @@ def high_flow_run_ceiling():
     run(c, clock, dict(state), 40 * 60 * 1000, step_ms=5000)
     o = c.step(dict(state))
     check("pump_run_ms = None removes the ceiling", o["xPump2"], o)
+
+    print()
+    print("a dropped link must not hand back a fresh 20 minutes")
+    # Found on hardware: the link flapped every few seconds, main.py swapped in
+    # the all-off failsafe set each time, and the ceiling read that as a button
+    # release. A 20-minute limit had not fired in seven hours.
+    c = spa_core.SpaController()
+    on = dict(BASE, xSpaEnable=True, xPump2Request=True)
+    off = dict(BASE, xSpaEnable=False, xPump2Request=False)   # the failsafe set
+    c.step(dict(on))
+    for _ in range(15):   # 15 x (90 s run + 3 s outage) = 1395 s > the 1200 s ceiling
+        # 90 s of running, then a 3 s outage, repeated: far more blips than the
+        # ceiling is long, which is exactly what the bench was doing.
+        run(c, clock, dict(on), 90 * 1000, step_ms=5000)
+        c.step(dict(on))
+        run(c, clock, dict(off), 3 * 1000, step_ms=500, requests_valid=False)
+        c.step(dict(off), requests_valid=False)
+    o = c.step(dict(on))
+    check("the ceiling still fires after 15 link outages",
+          not o["xPump2"], (o["xPump2"], c.pump_remaining_s("pump2")))
+
+    # And a genuine release, with the link up, still restarts it.
+    c = spa_core.SpaController()
+    c.step(dict(on))
+    run(c, clock, dict(on), 21 * 60 * 1000, step_ms=5000)
+    check("expired before the release", not c.step(dict(on))["xPump2"])
+    c.step(dict(off))                      # requests_valid defaults to True
+    o = c.step(dict(on))
+    check("a real release with the link up still restarts the clock",
+          o["xPump2"], o["xPump2"])
 
 
 def main():

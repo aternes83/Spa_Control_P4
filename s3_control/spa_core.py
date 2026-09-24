@@ -190,21 +190,31 @@ class SpaController:
             return 0
         return max(0, (self.pump_run_ms - ticks_diff(ticks_ms(), start)) // 1000)
 
-    def _ceiling_reached(self, name, requested, run_ms, now):
+    def _ceiling_reached(self, name, requested, run_ms, now, requests_valid=True):
         """Request-driven runtime ceiling. The clock starts when the request goes
-        true; dropping the request clears it, so only a release buys more time.
+        true; releasing the request clears it, so only a release buys more time.
         Returns True once the ceiling is hit, and the caller withholds the
         output — the request itself is left alone, so the panel still shows what
-        was asked for."""
+        was asked for.
+
+        requests_valid is how the caller says "the request set is real right
+        now". When the link to the panel drops, main.py substitutes the failsafe
+        set, which is all-off — correct, the outputs must stop. But that is not
+        the user letting go of a button, and treating it as one restarts the
+        clock. On a link that blips every few seconds the ceiling then never
+        arrives at all, which is how this was found: a 20-minute limit that had
+        not fired in seven hours. So a deassert only clears the timer when the
+        requests are real."""
         if not requested:
-            self._timer_starts[name] = None
+            if requests_valid:
+                self._timer_starts[name] = None
             return False
         start = self._timer_starts.get(name)
         if start is None:
             self._timer_starts[name] = start = now
         return run_ms is not None and ticks_diff(now, start) >= run_ms
 
-    def step(self, inputs):
+    def step(self, inputs, requests_valid=True):
         x_spa_enable_cmd = bool(inputs.get("xSpaEnable", False))
         x_pump_request = bool(inputs.get("xPumpRequest", False))
         x_pump1_high_request = bool(inputs.get("xPump1HighRequest", False))
@@ -263,11 +273,11 @@ class SpaController:
         # is left uncapped so the thermostat and freeze protection keep their
         # circulation, and it picks up automatically when high speed times out.
         p1h_done = self._ceiling_reached("pump1_high", x_pump1_high_request,
-                                         self.pump_run_ms, now)
+                                         self.pump_run_ms, now, requests_valid)
         p2_done = self._ceiling_reached("pump2", x_pump2_request,
-                                        self.pump_run_ms, now)
+                                        self.pump_run_ms, now, requests_valid)
         p3_done = self._ceiling_reached("pump3", x_pump3_request,
-                                        self.pump_run_ms, now)
+                                        self.pump_run_ms, now, requests_valid)
 
         x_pump1_high = x_permissive and x_pump1_high_request and (not p1h_done)
         x_pump1_low = (
