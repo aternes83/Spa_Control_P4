@@ -203,6 +203,89 @@ int main(void)
           ui_control_state(&ui, &s, UI_CTL_LIGHT, 0x00000900u) == UI_STATE_REFUSED,
           0);
 
+    printf("a timeout releases the request; a refusal does not\n");
+    /* Both halves of what the tub showed: jets 2 and 3 stuck on an amber
+     * "Refused" that no press would clear, and a light whose button stayed lit
+     * long after its hour was up. On the S3 only a release restarts the
+     * ceiling, so a panel that never lets go has locked the load out for good. */
+    ui_intent_init(&ui);
+    s = live_state(SPALINK_OUT_PUMP2 | SPALINK_OUT_PUMP3 | SPALINK_OUT_LIGHT,
+                   SPALINK_IN_SPA_ENABLE);
+    ui.pump2 = true;
+    ui.pump3 = true;
+    ui.light = true;
+    ui_intent_tick(&ui, 1000);
+    ui_intent_release_timeouts(&ui, &s, 1000);
+    check("a running load is left alone", ui.pump2 && ui.pump3 && ui.light, 0);
+
+    /* The controller reports the ceiling and drops the loads in the same frame. */
+    s.outputs = 0;
+    s.timed_out = SPALINK_OUT_PUMP2 | SPALINK_OUT_LIGHT;
+    ui_intent_release_timeouts(&ui, &s, 1000 + UI_PENDING_GRACE_MS);
+    check("jet 2 lets go once its twenty minutes are up", !ui.pump2, 0);
+    check("so does the light at the end of its hour", !ui.light, 0);
+    check("and jet 3, which did not time out, keeps asking", ui.pump3, 0);
+    check("the released bits leave the wire",
+          ui_requests(&ui) == (uint8_t)(SPALINK_REQ_SPA_ENABLE | SPALINK_REQ_PUMP3),
+          ui_requests(&ui));
+    check("jet 3 still reads refused, which is the case worth seeing",
+          ui_control_state(&ui, &s, UI_CTL_PUMP3,
+                           1000 + UI_PENDING_GRACE_MS) == UI_STATE_REFUSED, 0);
+    check("and jet 2 has gone quietly back to off",
+          ui_control_state(&ui, &s, UI_CTL_PUMP2,
+                           1000 + UI_PENDING_GRACE_MS) == UI_STATE_OFF, 0);
+
+    printf("a timeout flag cannot cancel the press that follows it\n");
+    /* The flag clears on the S3 the moment the request drops, but STATUS only
+     * goes out at 5 Hz, so a quick second press can land while the panel still
+     * holds the old frame. Releasing on that would make the light look dead. */
+    ui.light = true;                        /* pressed again, immediately */
+    ui_intent_tick(&ui, 1000 + UI_PENDING_GRACE_MS);
+    ui_intent_release_timeouts(&ui, &s, 1000 + UI_PENDING_GRACE_MS);
+    check("a fresh press survives a stale timeout flag", ui.light, 0);
+    ui_intent_release_timeouts(&ui, &s, 1000 + 2 * UI_PENDING_GRACE_MS);
+    check("but a flag still standing after the grace does release it",
+          !ui.light, 0);
+
+    printf("high speed times out down to low, not off\n");
+    /* The S3 hands the winding back to low rather than stopping the pump, so the
+     * selection has to follow it or the tile would say Off over a running jet. */
+    ui_intent_init(&ui);
+    s = live_state(SPALINK_OUT_PUMP1_LOW, SPALINK_IN_SPA_ENABLE);
+    ui.pump1 = 2;
+    ui_intent_tick(&ui, 1000);
+    s.timed_out = SPALINK_OUT_PUMP1_HIGH;
+    ui_intent_release_timeouts(&ui, &s, 1000 + UI_PENDING_GRACE_MS);
+    check("jet 1 drops to low", ui.pump1 == 1, ui.pump1);
+    check("and still asks for the low winding",
+          (ui_requests(&ui) & SPALINK_REQ_PUMP) &&
+          !(ui_requests(&ui) & SPALINK_REQ_PUMP1_HIGH), ui_requests(&ui));
+
+    printf("max jet lets go with the pumps it was holding\n");
+    /* It asserts all three by itself, so clearing the toggles alone would leave
+     * the request on the wire and the ceiling on the S3 unable to restart. */
+    ui_intent_init(&ui);
+    s = live_state(SPALINK_OUT_PUMP2, SPALINK_IN_SPA_ENABLE);
+    ui_set_max_jet(&ui, true, &s, 1000, &sp);
+    ui_intent_tick(&ui, 1000);
+    s.timed_out = SPALINK_OUT_PUMP2;
+    ui_intent_release_timeouts(&ui, &s, 1000);
+    check("but not to a flag from before it was pressed", ui.max_jet, 0);
+    ui_intent_release_timeouts(&ui, &s, 1000 + UI_PENDING_GRACE_MS);
+    check("max jet is over", !ui.max_jet, 0);
+    check("and the pumps are no longer asked for",
+          ui_requests(&ui) == SPALINK_REQ_SPA_ENABLE, ui_requests(&ui));
+
+    printf("a controller with no byte 3 changes nothing\n");
+    ui_intent_init(&ui);
+    s = live_state(0, SPALINK_IN_SPA_ENABLE);
+    ui.pump2 = true;
+    ui.light = true;
+    ui_intent_tick(&ui, 1000);
+    ui_intent_release_timeouts(&ui, &s, 1000 + 10 * UI_PENDING_GRACE_MS);
+    check("an old controller leaves the requests standing, as it always did",
+          ui.pump2 && ui.light, 0);
+
     printf("a mode takes the pumps\n");
     ui_intent_init(&ui);
     const char *why = NULL;

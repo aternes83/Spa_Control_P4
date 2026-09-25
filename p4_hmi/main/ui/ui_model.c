@@ -79,6 +79,59 @@ void ui_intent_tick(ui_intent_t *ui, uint32_t now_ms)
     ui->last_requests = r;
 }
 
+/* Is this load's run over? True only once the request has also been standing
+ * longer than the grace, so the flag is known to describe *this* press and not
+ * the one before it. out_bit names the load in STATUS; req_bit is the request
+ * that asked for it, and carries the timestamp. */
+static bool timed_out(const ui_intent_t *ui, const spa_state_t *s,
+                      uint8_t out_bit, uint8_t req_bit, uint32_t now_ms)
+{
+    if (!(s->timed_out & out_bit)) {
+        return false;
+    }
+    int bit = __builtin_ctz(req_bit);
+    return (uint32_t)(now_ms - ui->asserted_ms[bit]) >= UI_PENDING_GRACE_MS;
+}
+
+void ui_intent_release_timeouts(ui_intent_t *ui, const spa_state_t *s,
+                                uint32_t now_ms)
+{
+    if (!s->timed_out) {
+        return;
+    }
+    bool p1h = timed_out(ui, s, SPALINK_OUT_PUMP1_HIGH, SPALINK_REQ_PUMP1_HIGH, now_ms);
+    bool p2  = timed_out(ui, s, SPALINK_OUT_PUMP2,      SPALINK_REQ_PUMP2,      now_ms);
+    bool p3  = timed_out(ui, s, SPALINK_OUT_PUMP3,      SPALINK_REQ_PUMP3,      now_ms);
+
+    if (p2) {
+        ui->pump2 = false;
+    }
+    if (p3) {
+        ui->pump3 = false;
+    }
+    if (timed_out(ui, s, SPALINK_OUT_LIGHT, SPALINK_REQ_LIGHT, now_ms)) {
+        ui->light = false;
+    }
+    /* High speed hands back to low on the S3 rather than stopping the pump, so
+     * the selection follows it down instead of going to Off. */
+    if (p1h && ui->pump1 > 1) {
+        ui->pump1 = 1;
+    }
+    /* Max Jet asserts all three high-flow pumps by itself, so clearing the
+     * toggles above would not actually drop the request while it is on. Its own
+     * 20 minutes expire at the same moment anyway — UI_MAX_JET_MS and the S3's
+     * pump_run_ms are the same number, and both start from the same press. */
+    if (ui->max_jet && (p1h || p2 || p3)) {
+        ui->max_jet = false;
+    }
+    /* Forget that these bits were ever asserted, so the next press registers as
+     * a rising edge and gets its own timestamp. Without this a press in the same
+     * tick as the release inherits the old one: it would be treated as settled
+     * immediately, cancelled by the stale flag, and read Refused rather than
+     * Starting in the meantime. */
+    ui->last_requests = ui_requests(ui);
+}
+
 bool ui_set_eco(ui_intent_t *ui, bool on, const spa_state_t *s, int *setpoint_f_out)
 {
     if (on == ui->eco) {

@@ -65,6 +65,21 @@ int main(void)
     check("fault text matches the code",
           strcmp(spa_fault_text(s.fault_code), "NO FLOW") == 0, 0);
     check("identical status is not a redraw", !spa_state_apply(&s, &m, 1100), 0);
+    check("a three-byte status reports nothing timed out", s.timed_out == 0,
+          s.timed_out);
+
+    /* Byte 3 is optional, so both lengths have to decode. A controller that
+     * predates it must keep meaning "nothing timed out" rather than leaving a
+     * stale mask behind, or the panel would go on releasing requests. */
+    uint8_t st4[4] = { st[0], st[1], st[2], SPALINK_OUT_PUMP2 | SPALINK_OUT_LIGHT };
+    m = msg(SPALINK_MSG_STATUS, st4, 4);
+    check("byte 3 is a redraw when it changes", spa_state_apply(&s, &m, 1150), 0);
+    check("and names the timed-out loads",
+          s.timed_out == (SPALINK_OUT_PUMP2 | SPALINK_OUT_LIGHT), s.timed_out);
+    check("an unchanged byte 3 is not a redraw", !spa_state_apply(&s, &m, 1160), 0);
+    m = msg(SPALINK_MSG_STATUS, st, 3);
+    check("dropping back to three bytes clears it",
+          spa_state_apply(&s, &m, 1170) && s.timed_out == 0, s.timed_out);
 
     printf("temperature\n");
     uint8_t tp[4];

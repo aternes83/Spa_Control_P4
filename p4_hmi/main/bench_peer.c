@@ -107,7 +107,7 @@ bool bench_peer_recv(spalink_msg_t *out, uint32_t now_ms)
         bool p1_low  = (s_water_dF < s_setpoint_dF ||
                         (enable && (s_req & SPALINK_REQ_PUMP))) && !p1_high;
         out->msg_id = SPALINK_MSG_STATUS;
-        out->len = 3;
+        out->len = 4;
         out->payload[0] = (uint8_t)((p1_low ? SPALINK_OUT_PUMP1_LOW : 0) |
                                     (p1_high ? SPALINK_OUT_PUMP1_HIGH : 0) |
                                     ((enable && (s_req & SPALINK_REQ_PUMP2)) ? SPALINK_OUT_PUMP2 : 0) |
@@ -119,6 +119,10 @@ bool bench_peer_recv(spalink_msg_t *out, uint32_t now_ms)
                                     SPALINK_IN_ESTOP_OK | SPALINK_IN_TEMP_SENSOR_OK |
                                     (enable ? SPALINK_IN_SPA_ENABLE : 0));
         out->payload[2] = 0;
+        /* The light is the only ceiling this stand-in keeps, so it is the only
+         * load it can report as timed out rather than refused. */
+        out->payload[3] = (uint8_t)((s_light_running && !light_on(now_ms))
+                                    ? SPALINK_OUT_LIGHT : 0);
         s_queue = 2;
         return true;
     }

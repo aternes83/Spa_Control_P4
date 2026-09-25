@@ -257,19 +257,32 @@ def requests_from_msg(payload):
     }
 
 
+_OUT_BITS = ((codec.OUT_PUMP1_LOW, "xPump1_Low"),
+             (codec.OUT_PUMP1_HIGH, "xPump1_High"),
+             (codec.OUT_PUMP2, "xPump2"),
+             (codec.OUT_PUMP3, "xPump3"),
+             (codec.OUT_HEATER, "xHeater"),
+             (codec.OUT_JETS, "xJets"),
+             (codec.OUT_BLOWER, "xBlower"),
+             (codec.OUT_LIGHT, "xLight"))
+
+
 def status_payload(outputs, inputs, fault_code):
-    """Pack MSG_STATUS: outputs, safety inputs, fault."""
+    """Pack MSG_STATUS: outputs, safety inputs, fault, timed-out loads.
+
+    Byte 3 is an addition to the frame, not a change to it: a panel built
+    against the 3-byte version ignores the extra byte, and this board reads a
+    missing one as "nothing timed out". See docs/PROTOCOL.md.
+    """
     o = 0
-    for bit, key in ((codec.OUT_PUMP1_LOW, "xPump1_Low"),
-                     (codec.OUT_PUMP1_HIGH, "xPump1_High"),
-                     (codec.OUT_PUMP2, "xPump2"),
-                     (codec.OUT_PUMP3, "xPump3"),
-                     (codec.OUT_HEATER, "xHeater"),
-                     (codec.OUT_JETS, "xJets"),
-                     (codec.OUT_BLOWER, "xBlower"),
-                     (codec.OUT_LIGHT, "xLight")):
+    for bit, key in _OUT_BITS:
         if outputs.get(key):
             o |= bit
+    timed_out = outputs.get("timedOut") or {}
+    t = 0
+    for bit, key in _OUT_BITS:
+        if timed_out.get(key):
+            t |= bit
     i = 0
     for bit, key in ((codec.IN_FLOW_SWITCH, "xFlowSwitch"),
                      (codec.IN_HIGH_LIMIT_OK, "xHighLimitOK"),
@@ -279,4 +292,4 @@ def status_payload(outputs, inputs, fault_code):
         if inputs.get(key):
             i |= bit
     f = (codec.FAULT_ACTIVE if fault_code else 0) | (fault_code & codec.FAULT_CODE)
-    return bytes(bytearray([o, i, f]))
+    return bytes(bytearray([o, i, f, t]))

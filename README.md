@@ -243,12 +243,20 @@ Two deliberate behavioural changes, both switchable back off.
 
 `spa_core.pump_run_ms` puts a **20-minute runtime ceiling** on pump 1 high,
 pump 2 and pump 3, so a tub left with the jets on does not run them all night.
-The clock starts when the request goes true and only releasing it restarts the
-clock, so a panel holding the request stops at the ceiling until someone toggles
-it — 20 minutes per press. Pump 1 **low** is deliberately uncapped: it is the
+`light_run_ms` is the same mechanism with an hour on it. What is counted is time
+the request was actually honoured, and only releasing the request resets the
+total — 20 minutes per press. Pump 1 **low** is deliberately uncapped: it is the
 circulation pump the thermostat and freeze protection depend on, and it takes
 over automatically when high speed times out. Set `pump_run_ms = None` for v2.0
 behaviour; the differential test does exactly that.
+
+A dropped link is neither a release nor run time. The failsafe set is all-off, so
+reading it as a release hands out a fresh 20 minutes on every blip and the
+ceiling never fires; reading it as time served means a panel reconnecting after
+half an hour finds its pumps already refusing. The clock pauses instead, and
+resumes where it left off. Reaching the ceiling is reported to the panel in
+`STATUS` byte 3 so it can drop the request — which is also what restarts the
+ceiling — rather than sitting on an amber `Refused` tile that no press can clear.
 
 The second, in `spa_core.flow_fault_latch`: in v2.0
 `FAULT_NO_FLOW` is unreachable. Its guard is `flow_proven and not xFlowSwitch`,

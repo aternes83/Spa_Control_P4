@@ -70,7 +70,7 @@ arbitration over `STATUS` (0x110), which wins over `REQ` (0x120).
 
 | id | name | payload | notes |
 |---|---|---|---|
-| `0x10` | `STATUS` | `outputs`, `inputs`, `fault` | 5 Hz, and immediately on change |
+| `0x10` | `STATUS` | `outputs`, `inputs`, `fault`, `timed_out` | 5 Hz, and immediately on change |
 | `0x11` | `TEMP` | `water_dF:i16`, `setpoint_dF:i16` | little-endian, 0.1 °F |
 | `0x12` | `TIMERS` | `spa_s:u16`, `light_s:u16` | seconds remaining |
 | `0x13` | `HELLO` | `proto`, `fw_major`, `fw_minor`, `board` | 0.5 Hz identity beacon |
@@ -85,6 +85,19 @@ arbitration over `STATUS` (0x110), which wins over `REQ` (0x120).
 `fault`: bit 7 set when faulted, low nibble is the code — `1` no flow,
 `2` high limit, `3` over temp, `4` e-stop, `5` temp sensor. Same numbering as
 `spa_core.FAULT_*` and `spa_state_t.fault_code`.
+
+`timed_out` bits: the same positions as `outputs`. A load is named here when the
+controller is holding it off because its own runtime ceiling expired — 20 minutes
+on a high-flow pump, an hour on the light — and **not** when an interlock or a
+fault is what is holding it off. The two look identical from the panel otherwise,
+and they want opposite handling: a timeout means the panel should drop the
+request, which is also what restarts the ceiling on the S3, while a refusal
+should stay on the glass. See `docs/HMI.md`, *A run that ends is not a refusal*.
+
+`timed_out` is an addition to the frame rather than a change to it. A `STATUS` of
+length 3 is a controller built before the byte existed and reads as "nothing
+timed out", which is the behaviour the panel had anyway; a panel built before it
+ignores the fourth byte. Payloads stay inside the 7-byte CAN budget either way.
 
 ### P4 → S3 — requests
 

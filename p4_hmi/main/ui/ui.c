@@ -651,6 +651,9 @@ void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
     drain_remote(s, now_ms);
     ui_target_settle(&s_ui, s);
     ui_intent_tick(&s_ui, now_ms);
+    /* After the tick, so a press made this frame carries its own timestamp and
+     * cannot be cancelled by a timeout flag left over from the last run. */
+    ui_intent_release_timeouts(&s_ui, s, now_ms);
 
     /* Nothing in the control column may be touched while the controller is not
      * answering. A press we cannot deliver is worse than no button at all: it
@@ -712,7 +715,12 @@ void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
     } else if (lst == UI_STATE_REFUSED && s->light_remain_s == 0) {
         /* The light has its own run timer on the S3. Once it expires the
          * controller drops the load while our request is still standing, which
-         * is a timeout rather than a refusal and should not read as a fault. */
+         * is a timeout rather than a refusal and should not read as a fault.
+         *
+         * A current controller says so in STATUS byte 3 and the request is
+         * released above, so the tile goes to Off and this never fires. It is
+         * kept for a controller that predates that byte, where the request does
+         * go on standing and the least this can do is name what happened. */
         light_label = "Timed out";
     }
     tile_apply(&s_t_light, lst, live, light_label);

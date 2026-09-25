@@ -166,8 +166,8 @@ class SpaController:
         self._pump_min_run = OnDelay(self.pump_preheat_ms)
         self._thermostat = ThermostatHeat()
         self._run_timer_start_ms = None
-        self._light_timer_start_ms = None
-        self._timer_starts = {}                    # see _ceiling_reached()
+        self._run_accum_ms = {}                    # see _ceiling_reached()
+        self._run_last_ms = {}
 
     # ── Timer introspection, for MSG_TIMERS ──────────────────────────────────
     def spa_remaining_s(self):
@@ -177,42 +177,56 @@ class SpaController:
         return max(0, left // 1000)
 
     def light_remaining_s(self):
-        if self._light_timer_start_ms is None:
-            return 0
-        left = self.light_run_ms - ticks_diff(ticks_ms(), self._light_timer_start_ms)
-        return max(0, left // 1000)
+        return self._ceiling_remaining_s("light", self.light_run_ms)
 
     def pump_remaining_s(self, name):
         """Seconds left on a high-flow pump's ceiling. 0 when it is not running
         or has no ceiling. name is "pump1_high", "pump2" or "pump3"."""
-        start = self._timer_starts.get(name)
-        if start is None or self.pump_run_ms is None:
+        return self._ceiling_remaining_s(name, self.pump_run_ms)
+
+    def _ceiling_remaining_s(self, name, run_ms):
+        if run_ms is None or self._run_last_ms.get(name) is None:
             return 0
-        return max(0, (self.pump_run_ms - ticks_diff(ticks_ms(), start)) // 1000)
+        return max(0, (run_ms - self._run_accum_ms.get(name, 0)) // 1000)
 
     def _ceiling_reached(self, name, requested, run_ms, now, requests_valid=True):
-        """Request-driven runtime ceiling. The clock starts when the request goes
-        true; releasing the request clears it, so only a release buys more time.
+        """Runtime ceiling, measured in time the request was actually honoured.
+        Releasing the request clears the total, so only a release buys more time.
         Returns True once the ceiling is hit, and the caller withholds the
         output — the request itself is left alone, so the panel still shows what
-        was asked for.
+        was asked for, and the "timedOut" map in step()'s result says why.
 
         requests_valid is how the caller says "the request set is real right
         now". When the link to the panel drops, main.py substitutes the failsafe
         set, which is all-off — correct, the outputs must stop. But that is not
-        the user letting go of a button, and treating it as one restarts the
-        clock. On a link that blips every few seconds the ceiling then never
-        arrives at all, which is how this was found: a 20-minute limit that had
-        not fired in seven hours. So a deassert only clears the timer when the
-        requests are real."""
-        if not requested:
+        the user letting go of a button, and it must not be read as one:
+
+          * treating it as a release restarts the clock, so on a link that blips
+            every few seconds the ceiling never arrives at all. That is how this
+            was found — a 20-minute limit that had not fired in seven hours.
+          * treating it as time served is just as wrong in the other direction.
+            The load is off for the whole outage, so charging the user for it
+            means a panel that reconnects after half an hour finds its pumps
+            already timed out and refusing, with no way to see why.
+
+        So an outage does neither. The total is held where it was and the clock
+        resumes on reconnection: no free reset, and no time billed for a load
+        that was not running."""
+        acc = self._run_accum_ms.get(name, 0)
+        last = self._run_last_ms.get(name)
+        if requested:
+            if last is not None:
+                acc += ticks_diff(now, last)
+            self._run_last_ms[name] = now
+            self._run_accum_ms[name] = acc
+        else:
+            # Pause either way; only a release with a real request set resets.
+            self._run_last_ms[name] = None
             if requests_valid:
-                self._timer_starts[name] = None
+                acc = 0
+                self._run_accum_ms[name] = 0
             return False
-        start = self._timer_starts.get(name)
-        if start is None:
-            self._timer_starts[name] = start = now
-        return run_ms is not None and ticks_diff(now, start) >= run_ms
+        return run_ms is not None and acc >= run_ms
 
     def step(self, inputs, requests_valid=True):
         x_spa_enable_cmd = bool(inputs.get("xSpaEnable", False))
@@ -247,13 +261,11 @@ class SpaController:
 
         x_spa_enable = x_spa_enable_cmd and (not run_expired)
 
-        if x_light_request:
-            if self._light_timer_start_ms is None:
-                self._light_timer_start_ms = now
-            light_expired = ticks_diff(now, self._light_timer_start_ms) >= self.light_run_ms
-        else:
-            self._light_timer_start_ms = None
-            light_expired = False
+        # The light's 60 minutes runs on the same ceiling as the pumps, for the
+        # same reason: it is 60 minutes a press, and a link that drops must
+        # neither hand back a fresh hour nor spend one while the lamp is dark.
+        light_expired = self._ceiling_reached("light", x_light_request,
+                                              self.light_run_ms, now, requests_valid)
 
         # ── Two-tier permissive ───────────────────────────────────────────────
         # Freeze-protection permissive: safety interlocks only, NO run timer, so
@@ -356,4 +368,17 @@ class SpaController:
             "xLight": x_light,
             "xFault": self.x_fault,
             "iFaultCode": self.i_fault_code,
+            # Loads held off by a runtime ceiling rather than by an interlock,
+            # while the request for them still stands. Reported to the panel so
+            # it can drop the request instead of showing an amber "Refused" tile
+            # for the rest of the evening: the release is also what restarts the
+            # ceiling, so without it the load cannot come back at all. An
+            # interlock refusal is deliberately NOT in here — that one the user
+            # does need to see.
+            "timedOut": {
+                "xPump1_High": p1h_done,
+                "xPump2": p2_done,
+                "xPump3": p3_done,
+                "xLight": light_expired,
+            },
         }

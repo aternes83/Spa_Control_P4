@@ -161,6 +161,36 @@ believing the jets are running when they are not.
 `ON` without a request is normal: the S3 runs Jet 1 itself to circulate water for
 the heater, so the tile reads **Low** against an **Off** selection.
 
+### A run that ends is not a refusal
+
+The S3 puts a ceiling on how long a press is good for — 20 minutes on each
+high-flow pump, an hour on the light — and withholds the output when it is
+reached. That looks identical to an interlock from the outside: the request is
+still standing and the load is not running, so the tile would fill amber and read
+`REFUSED`.
+
+It is worse than a wrong colour. On the S3 the ceiling only restarts when the
+request is *released*, so a panel that goes on asking forever has locked the load
+out: pressing the tile again does nothing, because the tile was never off. That
+is exactly what the tub showed — Jet 2 and Jet 3 stuck refusing, and a Light
+button that stayed lit for the rest of the evening after its hour was up.
+
+So the controller says which it is. `STATUS` byte 3 names the loads it is holding
+off because their *own* ceiling expired rather than because an interlock said no
+(`docs/PROTOCOL.md`), and `ui_intent_release_timeouts()` drops those requests.
+The tile returns to `OFF`, the ceiling restarts on the S3, and the next press
+buys a fresh run. An interlock refusal is deliberately left standing and amber —
+that one the user does need to see.
+
+Two details that are easy to get wrong, both covered in `tools/test_ui_model.c`:
+
+* nothing is released inside the 1.5 s grace. The flag clears on the S3 as soon
+  as the request drops, but `STATUS` only goes out at 5 Hz, so a quick second
+  press can land while the panel still holds the previous frame. Releasing on
+  that would make the button look dead.
+* Max Jets asserts all three high-flow pumps by itself, so it has to end with
+  them. Clearing the tiles alone would leave the request on the wire.
+
 ### Why the fill is not the accent at full strength
 
 White on the accents measures 1.4–2.0:1 — under the 4.5:1 floor, and on the

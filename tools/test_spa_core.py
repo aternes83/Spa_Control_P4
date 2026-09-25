@@ -223,7 +223,11 @@ def differential_against_original():
             oa = a.step(dict(state))
             ob = b.step(dict(state))
             steps += 1
-            if oa != ob:
+            # "timedOut" is reporting for the panel, not a plant output, and the
+            # original has no such key. Everything the two firmwares actually
+            # drive is still compared key for key, extras included.
+            ob_plant = {k: v for k, v in ob.items() if k != "timedOut"}
+            if oa != ob_plant:
                 divergences.append((run_i, dict(state), oa, ob))
                 break
             clock.advance(rng.choice((10, 50, 250, 1000, 3000)))
@@ -339,6 +343,80 @@ def high_flow_run_ceiling():
     o = c.step(dict(on))
     check("a real release with the link up still restarts the clock",
           o["xPump2"], o["xPump2"])
+
+    print()
+    print("nor may it bill the outage as run time")
+    # The other half of the same bug, and the one that reached the tub: an
+    # outage longer than the ceiling left the pump timed out the instant the
+    # link came back, refusing with nothing wrong and no way to see why. The
+    # load is off for the whole outage, so the clock pauses rather than runs.
+    c = spa_core.SpaController()
+    c.step(dict(on))
+    run(c, clock, dict(on), 5 * 60 * 1000, step_ms=5000)
+    c.step(dict(on))
+    run(c, clock, dict(off), 30 * 60 * 1000, step_ms=5000, requests_valid=False)
+    c.step(dict(off), requests_valid=False)
+    o = c.step(dict(on))
+    check("pump 2 runs again after an outage longer than its ceiling",
+          o["xPump2"], o["xPump2"])
+    check("and picks up the 15 minutes it had left, not a fresh 20",
+          14 * 60 <= c.pump_remaining_s("pump2") <= 15 * 60 + 5,
+          c.pump_remaining_s("pump2"))
+    run(c, clock, dict(on), 15 * 60 * 1000, step_ms=5000)
+    o = c.step(dict(on))
+    check("and still stops at 20 minutes of actual running",
+          not o["xPump2"], o["xPump2"])
+
+    print()
+    print("the panel is told a timeout is not a refusal")
+    # Without this the HMI goes on asking forever, the tile sits amber on
+    # "Refused", and because only a release restarts the ceiling the load can
+    # never come back at all. See ui_intent_release_timeouts().
+    c = spa_core.SpaController()
+    state = dict(BASE, xSpaEnable=True, xPump2Request=True, xLightRequest=True)
+    o = c.step(dict(state))
+    check("nothing is timed out while the loads are running",
+          not any(o["timedOut"].values()), o["timedOut"])
+    run(c, clock, dict(state), 21 * 60 * 1000, step_ms=5000)
+    o = c.step(dict(state))
+    check("pump 2 is reported timed out once its ceiling is reached",
+          o["timedOut"]["xPump2"] and not o["xPump2"], o["timedOut"])
+    check("the light is still running on its own, longer ceiling",
+          o["xLight"] and not o["timedOut"]["xLight"], o["timedOut"])
+    run(c, clock, dict(state), 40 * 60 * 1000, step_ms=5000)
+    o = c.step(dict(state))
+    check("and is reported timed out at 60 minutes",
+          o["timedOut"]["xLight"] and not o["xLight"], o["timedOut"])
+
+    # A load an interlock is holding off is a refusal, and must NOT be reported
+    # as a timeout — that is the one the user needs to see on the glass.
+    c = spa_core.SpaController()
+    o = c.step(dict(BASE, xSpaEnable=True, xPump2Request=True,
+                    xRemoteEStopOK=False))
+    check("an e-stop refusal is not dressed up as a timeout",
+          not o["xPump2"] and not o["timedOut"]["xPump2"], o["timedOut"])
+
+    print()
+    print("the light runs on the same ceiling as the pumps")
+    c = spa_core.SpaController()
+    on_l = dict(BASE, xSpaEnable=True, xLightRequest=True)
+    off_l = dict(BASE, xSpaEnable=False, xLightRequest=False)
+    o = c.step(dict(on_l))
+    check("the light comes on when asked", o["xLight"], o["xLight"])
+    check("and reports 60 minutes left",
+          abs(c.light_remaining_s() - 60 * 60) <= 1, c.light_remaining_s())
+    # A blip used to reset the light's hour, the same way it reset the pumps'.
+    for _ in range(20):
+        run(c, clock, dict(on_l), 3 * 60 * 1000, step_ms=5000)
+        c.step(dict(on_l))
+        run(c, clock, dict(off_l), 3 * 1000, step_ms=500, requests_valid=False)
+        c.step(dict(off_l), requests_valid=False)
+    o = c.step(dict(on_l))
+    check("the hour still runs out across 20 link outages",
+          not o["xLight"], (o["xLight"], c.light_remaining_s()))
+    o = c.step(dict(on_l, xLightRequest=False))
+    o = c.step(dict(on_l))
+    check("and a real release buys a fresh hour", o["xLight"], o["xLight"])
 
 
 def main():

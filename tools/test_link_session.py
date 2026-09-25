@@ -196,6 +196,13 @@ def main():
     clear = session.status_payload(outputs, inputs, 0)
     check("no fault leaves the active bit clear", clear[2] == 0, hex(clear[2]))
     check("status payload fits a single CAN frame", len(p) + 1 <= 8)
+    check("nothing timed out leaves byte 3 clear", p[3] == 0, hex(p[3]))
+    timed = session.status_payload(
+        dict(outputs, timedOut={"xPump2": True, "xLight": True}), inputs, 0)
+    check("byte 3 names the timed-out loads, in the byte-0 bit positions",
+          timed[3] == (codec.OUT_PUMP2 | codec.OUT_LIGHT), hex(timed[3]))
+    check("a timeout is reported without disturbing the outputs byte",
+          timed[0] == p[0], (hex(timed[0]), hex(p[0])))
 
     print("request decoding")
     r = session.requests_from_msg(bytes([codec.REQ_JETS | codec.REQ_LIGHT]))

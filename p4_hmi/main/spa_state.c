@@ -48,11 +48,19 @@ bool spa_state_apply(spa_state_t *s, const spalink_msg_t *m, uint32_t now_ms)
         if (m->len < 3) {
             return changed;     /* short frame: keep the last good state */
         }
-        if (s->outputs != m->payload[0] || s->safety_inputs != m->payload[1]) {
-            changed = true;
+        {
+            /* Byte 3 is optional: an older controller sends three. Absent means
+             * nothing has timed out, which is also what it meant before the
+             * byte existed. */
+            uint8_t timed_out = (m->len >= 4) ? m->payload[3] : 0;
+            if (s->outputs != m->payload[0] || s->safety_inputs != m->payload[1] ||
+                s->timed_out != timed_out) {
+                changed = true;
+            }
+            s->outputs = m->payload[0];
+            s->safety_inputs = m->payload[1];
+            s->timed_out = timed_out;
         }
-        s->outputs = m->payload[0];
-        s->safety_inputs = m->payload[1];
         {
             bool active = (m->payload[2] & SPALINK_FAULT_ACTIVE) != 0;
             uint8_t code = m->payload[2] & SPALINK_FAULT_CODE;

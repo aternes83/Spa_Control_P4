@@ -99,6 +99,9 @@ IN_SPA_ENABLE    = 0x10
 FAULT_ACTIVE = 0x80
 FAULT_CODE   = 0x0F
 
+# MSG_STATUS byte 3 — loads held off by their own runtime ceiling rather than by
+# an interlock. Same bit positions as byte 0; a 3-byte frame means "none".
+
 # MSG_REQ byte 0 — what the user is asking for
 REQ_SPA_ENABLE  = 0x01
 REQ_PUMP        = 0x02   # pump 1 low

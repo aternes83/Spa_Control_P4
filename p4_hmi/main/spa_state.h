@@ -36,6 +36,11 @@ typedef struct {
     /* Plant state, as last reported. */
     uint8_t  outputs;          /* SPALINK_OUT_* bits */
     uint8_t  safety_inputs;    /* SPALINK_IN_* bits */
+    /* Loads the S3 is holding off because their own runtime ceiling expired
+     * rather than because an interlock said no — SPALINK_OUT_* bits again. A
+     * controller that predates STATUS byte 3 leaves this 0, which reads as
+     * "nothing timed out" and keeps the old behaviour. */
+    uint8_t  timed_out;
     bool     fault_active;
     uint8_t  fault_code;
     int16_t  water_dF;         /* deci-Fahrenheit */

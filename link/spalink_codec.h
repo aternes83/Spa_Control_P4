@@ -80,6 +80,12 @@
 #define SPALINK_FAULT_ACTIVE 0x80
 #define SPALINK_FAULT_CODE   0x0F
 
+/* STATUS byte 3 — loads the controller is holding off because their own runtime
+ * ceiling expired, not because an interlock said no. Same bit positions as
+ * byte 0. Optional: a frame of len 3 is a controller that predates this byte and
+ * reads as "nothing timed out". The panel releases the requests named here —
+ * that release is also what restarts the ceiling on the controller. */
+
 /* REQ byte 0 — user requests */
 #define SPALINK_REQ_SPA_ENABLE 0x01
 #define SPALINK_REQ_PUMP       0x02

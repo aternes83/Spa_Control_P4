@@ -111,6 +111,27 @@ uint8_t ui_modes(const ui_intent_t *ui);
 /* Call every UI tick. Expires Max Jet and timestamps newly-asserted requests. */
 void ui_intent_tick(ui_intent_t *ui, uint32_t now_ms);
 
+/* Let go of anything the controller has stopped honouring because its own
+ * runtime ceiling ran out — the 20 minutes on a high-flow pump, the hour on the
+ * light. Call every tick, straight after ui_intent_tick().
+ *
+ * Without this the panel keeps asking forever and the load can never come back,
+ * because on the S3 it is releasing the request that restarts the ceiling. The
+ * tile also sits amber on "Refused" for the rest of the evening, which says an
+ * interlock is holding the load off when nothing is: the run simply ended. Both
+ * were reported from the tub — jets 2 and 3 stuck refusing, and a light whose
+ * button never went out when its hour was up.
+ *
+ * Only a timeout releases a request. An interlock refusal leaves it standing and
+ * the tile amber, which is the one case a user does need to see.
+ *
+ * Nothing is released inside UI_PENDING_GRACE_MS of being asked for, so a press
+ * that lands before the S3's next STATUS is not cancelled by the timeout flag
+ * from the *previous* run — the flag clears on the controller as soon as the
+ * request drops, but the panel can be a frame or two ahead of hearing it. */
+void ui_intent_release_timeouts(ui_intent_t *ui, const spa_state_t *s,
+                                uint32_t now_ms);
+
 /* Eco locks the setpoint to 80 °F and restores the previous one on the way out,
  * as the v2.0 HMI did. Returns true if the caller must send a SETPOINT frame,
  * with the value in *setpoint_f_out. Entering Eco cancels Max Jet, and the
