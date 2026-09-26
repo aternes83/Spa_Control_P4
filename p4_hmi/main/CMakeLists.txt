@@ -10,6 +10,8 @@ idf_component_register(
         "bench_peer.c"
         "net_link.c"
         "mqtt_spa.c"
+        "ota.c"
+        "ota_version.c"
         "ble_prov.c"
         "../../link/spalink_codec.c"
         "ui/ui.c"

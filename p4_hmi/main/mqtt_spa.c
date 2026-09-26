@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net_link.h"
+#include "ota.h"
 #include "spalink_codec.h"
 
 static const char *TAG = "mqtt";
@@ -76,12 +77,21 @@ static void on_command(const char *data, int len)
         cmd.has_max_jet = true; cmd.max_jet = cJSON_IsTrue(j);
     }
 
+    /* ota_apply carries the version to install, and it must be the one the
+     * panel's own manifest poll is currently offering — see ota.h. A command
+     * naming anything else is refused, so reaching the broker is not by itself
+     * enough to choose what firmware this board runs. */
+    if (cJSON_IsString(j = cJSON_GetObjectItemCaseSensitive(root, "ota_apply"))) {
+        if (!ota_apply_version(j->valuestring)) {
+            ESP_LOGW(TAG, "ota_apply %s refused", j->valuestring);
+        }
+    }
+
     /* Deliberately not handled, and silent about it rather than wrong:
      *   set_temp_cal  the probe is on the S3 and SpaLink has no message for it
      *                 (7-byte payload cap vs five floats) — docs/MQTT.md
      *   schedule      not implemented
-     *   ota_apply     not implemented
-     * Honouring any of these partially would be worse than not at all. */
+     * Honouring either partially would be worse than not at all. */
     if (cJSON_GetObjectItemCaseSensitive(root, "set_temp_cal")) {
         ESP_LOGW(TAG, "set_temp_cal ignored: needs a SpaLink message (docs/MQTT.md)");
     }
@@ -106,10 +116,27 @@ static int build_status(char *buf, size_t n, const spa_state_t *s, const ui_out_
               : (out & SPALINK_OUT_PUMP1_LOW)  ? 1
                                                : 0;
 
-    /* schedule_on, schedule_active, ota_avail and ota_state are omitted, not
-     * sent false or null: they are optional in SpaStatus.swift, and omitting is
-     * the honest encoding of "this firmware does not know". r_ohms likewise —
-     * the S3 does not report resistance over SpaLink yet. */
+    /* ota_avail is omitted rather than sent null when there is nothing on
+     * offer, which is the honest encoding of "no update" in SpaStatus.swift —
+     * and it keeps the payload identical between heartbeats, so the
+     * publish-on-change test below still works. ota_state is always sent once
+     * OTA is compiled in, because "idle" is information: it says the panel is
+     * watching for updates and is not mid-download.
+     *
+     * schedule_on, schedule_active and r_ohms stay omitted — still not known. */
+    char ota_fields[128] = "";
+    if (ota_enabled()) {
+        char st[48];
+        ota_state_str(st, sizeof(st));
+        const char *avail = ota_available_version();
+        if (avail) {
+            snprintf(ota_fields, sizeof(ota_fields),
+                     ",\"ota_avail\":\"%s\",\"ota_state\":\"%s\"", avail, st);
+        } else {
+            snprintf(ota_fields, sizeof(ota_fields), ",\"ota_state\":\"%s\"", st);
+        }
+    }
+
     return snprintf(buf, n,
         "{\"id\":\"%s\""
         ",\"temp_f\":%.1f"
@@ -125,6 +152,7 @@ static int build_status(char *buf, size_t n, const spa_state_t *s, const ui_out_
         ",\"fault_code\":%d"
         ",\"fw\":\"%s\""
         ",\"link\":%s"
+        "%s"
         "}",
         CONFIG_SPA_HMI_MQTT_ID,
         s->have_temp ? s->water_dF / 10.0 : 0.0,
@@ -144,7 +172,8 @@ static int build_status(char *buf, size_t n, const spa_state_t *s, const ui_out_
          * not to the tub" is otherwise indistinguishable from a healthy spa
          * sitting idle, and that is exactly the case somebody debugging needs
          * to see. An absent link means every plant field above is stale. */
-        s->link_up ? "true" : "false");
+        s->link_up ? "true" : "false",
+        ota_fields);
 }
 
 void mqtt_spa_publish(const spa_state_t *s, const ui_out_t *o, uint32_t now_ms)

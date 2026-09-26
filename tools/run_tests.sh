@@ -33,6 +33,17 @@ else
 fi
 
 echo
+echo "── OTA version arithmetic (C) ──────────────────────────────"
+if "$CC" -std=c11 -Wall -Wextra -Werror -I p4_hmi/main \
+        -o "$BUILD/test_ota_version" \
+        tools/test_ota_version.c p4_hmi/main/ota_version.c; then
+    "$BUILD/test_ota_version" || fail=1
+else
+    echo "  FAIL could not compile the OTA version tests"
+    fail=1
+fi
+
+echo
 echo "── HMI presentation logic (C) ──────────────────────────────"
 if "$CC" -std=c11 -Wall -Wextra -Werror -I link -I p4_hmi/main \
         -o "$BUILD/test_ui_model" \

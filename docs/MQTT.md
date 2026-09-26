@@ -26,7 +26,7 @@ camelCase.
 | 2. `spa/status` published | **verified against a live broker** |
 | 3. `spa/commands` honoured | subscribed; untested until an S3 is wired |
 | 4. BLE provisioning | **advertising on hardware**, see `docs/BLE.md` |
-| 5. OTA relay, then `set_temp_cal` | not written |
+| 5. OTA | **built**, see `docs/OTA.md`; `set_temp_cal` still not written |
 
 ## Where it runs, and why not on the C6
 
@@ -114,7 +114,8 @@ this silently — the app decodes a partial object and shows stale values.
 | `fault_code` | int | matches `spa_core.FAULT_*` and `spa_fault_t` |
 | `schedule_on`, `schedule_active` | bool | not implemented yet; omit rather than lie |
 | `fw` | string | P4 firmware version |
-| `ota_avail`, `ota_state` | string or null | not implemented yet |
+| `ota_avail` | string | version the update manifest is offering. **Omitted** when there is nothing newer, rather than sent null |
+| `ota_state` | string | `idle`, `checking`, `downloading 42%`, `verifying`, `rebooting`, or `failed: <why>`. Sent whenever OTA is compiled in, omitted when it is not |
 
 **Publish actual outputs, never the user's selection.** v2.0's own comment says
 it best — *"so the app stays honest like the LCD — e.g. MAX JET forcing all jets
@@ -140,7 +141,7 @@ only what changed.
 | `eco`, `max_jet` | bool | `ui_set_eco()` / `ui_set_max_jet()`, so the mode logic runs |
 | `set_temp_cal` | object | NTC coefficients — **belongs to the S3**, needs a new SpaLink message |
 | `schedule` | object | not implemented |
-| `ota_apply` | string | not implemented |
+| `ota_apply` | string | the version to install, which **must** be the one currently in `ota_avail`. Anything else is refused — see `docs/OTA.md` |
 
 `eco` and `max_jet` must go through `ui_set_eco()` and `ui_set_max_jet()` rather
 than writing the fields, or the setpoint hand-off and the mutual cancellation are

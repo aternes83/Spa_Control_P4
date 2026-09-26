@@ -73,3 +73,18 @@ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
 
 # Networking runs through the on-board ESP32-C6 over SDIO (esp_hosted). Enable
 # the remote-radio components when the MQTT/BLE work starts.
+
+# ── OTA ─────────────────────────────────────────────────────────────────────
+# Roll back to the previous slot unless the new image says it is well.
+#
+# This is the whole safety argument for updating a panel on a wall. Without it
+# the bootloader has no reason to prefer the old image, so a build that flashes
+# cleanly and then crashes on boot is permanent and needs a cable and a ladder.
+# With it, an image starts PENDING_VERIFY and must reach
+# esp_ota_mark_app_valid_cancel_rollback() — which main.c calls only after the
+# panel has run its link loop for 30 s — or the next reset takes the old one
+# back.
+#
+# It costs nothing when no OTA is in use: a wired flash writes a slot that is
+# already marked valid, so the check never fires.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

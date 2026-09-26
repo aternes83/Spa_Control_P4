@@ -34,6 +34,7 @@
 #include "lvgl.h"
 #include "mqtt_spa.h"
 #include "net_link.h"
+#include "ota.h"
 #include "spa_state.h"
 #include "spalink_codec.h"
 #include "spalink_port.h"
@@ -135,14 +136,28 @@ static void update_clock(void)
     }
 }
 
+/* How long this build has to keep running before it is allowed to call itself
+ * good and cancel the bootloader's rollback. Long enough to get past display
+ * init, link init and a few hundred trips round the loop below, which is where
+ * an image that is going to crash does it; short enough that a panel is not
+ * sitting one reset away from a downgrade for an appreciable part of an
+ * evening. It deliberately does not wait for the S3 — see ota_report_healthy(). */
+#define OTA_HEALTHY_AFTER_MS 30000
+
 static void link_task(void *arg)
 {
     (void)arg;
     uint32_t next_req = 0;
     uint32_t next_ui = 0;
+    bool healthy_reported = false;
 
     for (;;) {
         uint32_t t = now_ms();
+
+        if (!healthy_reported && t >= OTA_HEALTHY_AFTER_MS) {
+            healthy_reported = true;
+            ota_report_healthy();
+        }
 
         spalink_msg_t m;
         while (spalink_port_recv(&m)) {
@@ -314,6 +329,7 @@ void app_main(void)
     net_link_start();
     mqtt_spa_start();
     ble_prov_start();
+    ota_start();
 
     xTaskCreate(link_task, "spa_link", 4096, NULL, 5, NULL);
 }

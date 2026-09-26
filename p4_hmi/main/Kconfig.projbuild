@@ -120,6 +120,50 @@ config SPA_HMI_MQTT_FW
     depends on SPA_HMI_MQTT
     default "p4-1.0"
 
+config SPA_HMI_OTA
+    bool "Accept over-the-air firmware updates"
+    depends on SPA_HMI_NET
+    default n
+    help
+        Polls a manifest for a newer build, reports it to the app as
+        `ota_avail`, and installs it when an `ota_apply` names that same
+        version (docs/MQTT.md, docs/OTA.md).
+
+        The image goes to whichever app slot is not running and its SHA-256 is
+        checked against the manifest before the boot partition moves, so a
+        failed download leaves the panel exactly as it was. Enable
+        CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE with this — sdkconfig.defaults
+        already does — or an image that boots but does not work becomes
+        permanent.
+
+        Off by default: a panel that is not being updated should not be talking
+        to an update server at all.
+
+config SPA_HMI_OTA_MANIFEST
+    string "Manifest URL"
+    depends on SPA_HMI_OTA
+    default ""
+    help
+        JSON with version, url, sha256 and size. Empty disables updates without
+        rebuilding, which is the switch to reach for if a campaign goes wrong.
+
+        https:// is verified against IDF's bundled roots, the same trust anchor
+        the broker uses. http:// is allowed and is what tools/ota_campaign.py
+        serves, because a mock campaign on a bench LAN gains nothing from a
+        certificate it would have to be told to trust anyway — the SHA-256 in
+        the manifest is what actually decides whether the image is installed,
+        and that check does not depend on the transport.
+
+config SPA_HMI_OTA_POLL_MIN
+    int "Minutes between manifest checks"
+    depends on SPA_HMI_OTA
+    default 15
+    range 1 1440
+    help
+        Only the check is on this interval; installing still waits for an
+        explicit ota_apply. Short values are for testing a campaign, not for a
+        tub on a wall.
+
 config SPA_HMI_BLE_PROV
     bool "Provision WiFi over BLE, as the app expects"
     depends on SPA_HMI_NET
