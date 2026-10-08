@@ -27,6 +27,9 @@ static esp_mqtt_client_handle_t s_client;
 static bool s_up;
 static char s_topic_status[96];
 static char s_topic_cmd[96];
+/* Retained liveness, maintained by the broker as much as by us — see the note
+ * on the last will in mqtt_spa_start(). */
+static char s_topic_online[96];
 static char s_last[512];          /* last payload, to publish only on change */
 static uint32_t s_next_hb_ms;
 
@@ -212,6 +215,10 @@ static void on_mqtt(void *arg, esp_event_base_t base, int32_t id, void *data)
     switch ((esp_mqtt_event_id_t)id) {
     case MQTT_EVENT_CONNECTED:
         esp_mqtt_client_subscribe(s_client, s_topic_cmd, 1);
+        /* Retained and QoS 1, so it is the first thing an app learns on
+         * subscribing and it survives the app being closed for a week. This
+         * overwrites whatever the last will left behind on the last drop. */
+        esp_mqtt_client_publish(s_client, s_topic_online, "true", 4, 1, 1);
         s_up = true;
         s_last[0] = '\0';        /* force a full publish on reconnect */
         s_next_hb_ms = 0;
@@ -267,9 +274,11 @@ void mqtt_spa_start(void)
     if (CONFIG_SPA_HMI_MQTT_ID[0] != '\0') {
         snprintf(s_topic_status, sizeof(s_topic_status), "spa/%s/status", CONFIG_SPA_HMI_MQTT_ID);
         snprintf(s_topic_cmd, sizeof(s_topic_cmd), "spa/%s/commands", CONFIG_SPA_HMI_MQTT_ID);
+        snprintf(s_topic_online, sizeof(s_topic_online), "spa/%s/online", CONFIG_SPA_HMI_MQTT_ID);
     } else {
         snprintf(s_topic_status, sizeof(s_topic_status), "spa/status");
         snprintf(s_topic_cmd, sizeof(s_topic_cmd), "spa/commands");
+        snprintf(s_topic_online, sizeof(s_topic_online), "spa/online");
     }
 
     /* mqtts:// needs a trust anchor or the handshake fails with nothing useful
@@ -278,11 +287,36 @@ void mqtt_spa_start(void)
     const bool tls = (strncmp(CONFIG_SPA_HMI_MQTT_URI, "mqtts://", 8) == 0) ||
                      (strncmp(CONFIG_SPA_HMI_MQTT_URI, "wss://", 6) == 0);
 
+    /* The last will is the whole answer to "the tub's WiFi died and the app
+     * still looked happy".
+     *
+     * `spa/<id>/status` is published retained, so the broker hands a cold app
+     * the last thing this panel ever said — which, after the router dropped,
+     * is a complete and entirely plausible picture of a running spa. The app
+     * cannot tell that from a live one: a retained message arrives the instant
+     * it subscribes, carries no timestamp, and looks exactly like a fresh
+     * heartbeat.
+     *
+     * Silence cannot be detected from this end either, because by then there is
+     * nothing on this end to notice it. The broker is the only party still
+     * present when the panel disappears, so it is the one that has to speak.
+     * The will is retained for the same reason the status is: an app opening
+     * tomorrow morning has to learn this without waiting for a timeout.
+     *
+     * It fires on an ungraceful drop — a dead router, a crash, a power cut, an
+     * OTA reboot — about 1.5x keepalive after the last packet, so around 45 s
+     * here. A clean shutdown would not fire it, which is correct: this panel
+     * has no clean shutdown, it only ever stops. */
     const esp_mqtt_client_config_t cfg = {
         .broker.address.uri = CONFIG_SPA_HMI_MQTT_URI,
         .broker.verification.crt_bundle_attach = tls ? esp_crt_bundle_attach : NULL,
         .credentials.username = CONFIG_SPA_HMI_MQTT_USER,
         .credentials.authentication.password = CONFIG_SPA_HMI_MQTT_PASS,
+        .session.last_will.topic = s_topic_online,
+        .session.last_will.msg = "false",
+        .session.last_will.msg_len = 5,
+        .session.last_will.qos = 1,
+        .session.last_will.retain = true,
         .session.keepalive = 30,
         /* Nothing here is worth the flash wear of a persistent session, and a
          * reconnect republishes everything anyway. */

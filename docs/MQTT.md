@@ -88,9 +88,41 @@ fallback:
 |---|---|---|
 | `spa/status` | P4 → app | published on change and at a slow heartbeat |
 | `spa/commands` | app → P4 | partial JSON; omitted fields mean "unchanged" |
+| `spa/online` | P4 **and the broker** → app | `true` / `false`, retained |
 
-With a device id configured both become `spa/<id>/status` and
-`spa/<id>/commands`, which is how more than one tub shares a broker.
+With a device id configured all three become `spa/<id>/status`,
+`spa/<id>/commands` and `spa/<id>/online`, which is how more than one tub shares
+a broker.
+
+## `spa/online` — why the broker has to be the one to say it
+
+**`status` is retained, and a retained message cannot tell you it is old.** It
+arrives the instant an app subscribes, carries no timestamp, and is
+indistinguishable from a live heartbeat. So an app opened after the tub's router
+died gets the last thing the panel ever said — a complete, plausible picture of a
+running spa — and shows it as current. That is not a decoding bug; it is what
+retention is for, and it is why this topic exists.
+
+The panel cannot report its own disappearance: by the time there is something to
+report, there is nothing left to report it. The broker is the only party still
+connected, so it speaks for the tub:
+
+* the panel registers `{"spa/<id>/online": "false"}` as its **last will**, QoS 1,
+  retained, when it opens the connection;
+* on connect it publishes `"true"` to the same topic, QoS 1, retained,
+  overwriting whatever the last drop left there;
+* when the panel stops answering keepalives the broker publishes the will by
+  itself. At a 30 s keepalive that is roughly **45 s** after the tub falls off
+  the network.
+
+It fires on any ungraceful end — a dead router, a crash, a power cut, an OTA
+reboot. It does not fire on a clean disconnect, which is correct: this panel has
+no clean shutdown, it only ever stops.
+
+**An app must treat a missing `online` topic as "unknown", not as "offline".**
+The v2.0 firmware does not publish it, and neither did this one before the topic
+existed, so absence means "this tub cannot tell me" — fall back to judging
+`status` freshness. Only an explicit `"false"` means the tub is off the network.
 
 ## Status payload
 
