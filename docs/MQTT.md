@@ -112,8 +112,9 @@ connected, so it speaks for the tub:
 * on connect it publishes `"true"` to the same topic, QoS 1, retained,
   overwriting whatever the last drop left there;
 * when the panel stops answering keepalives the broker publishes the will by
-  itself. At a 30 s keepalive that is roughly **45 s** after the tub falls off
-  the network.
+  itself, at 1.5× the 15 s keepalive after the last packet: **15–22 s** after
+  the tub falls off the network. 15 s is the compromise — 30 took long enough to
+  look broken, and much below 15 starts to call weak WiFi at the tub a drop.
 
 It fires on any ungraceful end — a dead router, a crash, a power cut, an OTA
 reboot. It does not fire on a clean disconnect, which is correct: this panel has

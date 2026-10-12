@@ -304,9 +304,14 @@ void mqtt_spa_start(void)
      * tomorrow morning has to learn this without waiting for a timeout.
      *
      * It fires on an ungraceful drop — a dead router, a crash, a power cut, an
-     * OTA reboot — about 1.5x keepalive after the last packet, so around 45 s
+     * OTA reboot — about 1.5x keepalive after the last packet, so 15-22 s
      * here. A clean shutdown would not fire it, which is correct: this panel
-     * has no clean shutdown, it only ever stops. */
+     * has no clean shutdown, it only ever stops.
+     *
+     * 15 s rather than the 30 it started at: at 30 the app took 30-45 s to show
+     * an unplugged tub as offline, which is long enough to look broken. Going
+     * lower buys little and starts to read a few seconds of weak WiFi at the
+     * tub as a drop, flashing "offline" and forcing a TLS reconnect. */
     const esp_mqtt_client_config_t cfg = {
         .broker.address.uri = CONFIG_SPA_HMI_MQTT_URI,
         .broker.verification.crt_bundle_attach = tls ? esp_crt_bundle_attach : NULL,
@@ -317,7 +322,7 @@ void mqtt_spa_start(void)
         .session.last_will.msg_len = 5,
         .session.last_will.qos = 1,
         .session.last_will.retain = true,
-        .session.keepalive = 30,
+        .session.keepalive = 15,
         /* Nothing here is worth the flash wear of a persistent session, and a
          * reconnect republishes everything anyway. */
         .session.disable_clean_session = false,
