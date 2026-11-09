@@ -59,6 +59,7 @@ ever fitted in parallel.
 | `docs/WIRING.md` | complete point-to-point wiring diagrams and the parts list | |
 | `docs/HMI.md` | the screen: layout, touch sizing for wet hands, and the state model behind it | |
 | `docs/MQTT.md` | the app's wire contract, and why MQTT runs on the P4 rather than the C6 | |
+| `docs/BRINGUP.md` | flashing and provisioning a fresh P4 panel (`tools/flash_p4.sh`) | |
 
 ## Bringing up the S3
 
