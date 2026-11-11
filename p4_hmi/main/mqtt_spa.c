@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "device_id.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
@@ -157,7 +158,7 @@ static int build_status(char *buf, size_t n, const spa_state_t *s, const ui_out_
         ",\"link\":%s"
         "%s"
         "}",
-        CONFIG_SPA_HMI_MQTT_ID,
+        device_id(),
         s->have_temp ? s->water_dF / 10.0 : 0.0,
         s->setpoint_dF / 10.0,
         (out & SPALINK_OUT_HEATER) ? "true" : "false",
@@ -268,18 +269,12 @@ void mqtt_spa_start(void)
         return;
     }
 
-    /* With a device id both topics gain it, which is how more than one tub
-     * shares a broker; without one they are the bare topics the app falls back
-     * to. Both forms are in BrokerSettings.swift. */
-    if (CONFIG_SPA_HMI_MQTT_ID[0] != '\0') {
-        snprintf(s_topic_status, sizeof(s_topic_status), "spa/%s/status", CONFIG_SPA_HMI_MQTT_ID);
-        snprintf(s_topic_cmd, sizeof(s_topic_cmd), "spa/%s/commands", CONFIG_SPA_HMI_MQTT_ID);
-        snprintf(s_topic_online, sizeof(s_topic_online), "spa/%s/online", CONFIG_SPA_HMI_MQTT_ID);
-    } else {
-        snprintf(s_topic_status, sizeof(s_topic_status), "spa/status");
-        snprintf(s_topic_cmd, sizeof(s_topic_cmd), "spa/commands");
-        snprintf(s_topic_online, sizeof(s_topic_online), "spa/online");
-    }
+    /* Always scoped to this board. The bare spa/status the app still falls
+     * back to would be shared by every tub on the broker, and an app paired to
+     * one of them would see and command all of them. */
+    snprintf(s_topic_status, sizeof(s_topic_status), "spa/%s/status", device_id());
+    snprintf(s_topic_cmd, sizeof(s_topic_cmd), "spa/%s/commands", device_id());
+    snprintf(s_topic_online, sizeof(s_topic_online), "spa/%s/online", device_id());
 
     /* mqtts:// needs a trust anchor or the handshake fails with nothing useful
      * to show for it. IDF's bundled roots cover the public CAs that hosted

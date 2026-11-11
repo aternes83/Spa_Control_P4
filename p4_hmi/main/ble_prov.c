@@ -20,6 +20,7 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
+#include "device_id.h"
 #include "net_link.h"
 
 static const char *TAG = "ble";
@@ -228,7 +229,7 @@ static void send_broker(void)
     cJSON_AddNumberToObject(b, "port", port);
     cJSON_AddStringToObject(b, "user", CONFIG_SPA_HMI_MQTT_USER);
     cJSON_AddStringToObject(b, "pw", CONFIG_SPA_HMI_MQTT_PASS);
-    cJSON_AddStringToObject(b, "device_id", CONFIG_SPA_HMI_MQTT_ID);
+    cJSON_AddStringToObject(b, "device_id", device_id());
 
     cJSON *root = cJSON_CreateObject();
     if (root) {

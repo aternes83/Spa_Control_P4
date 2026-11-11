@@ -47,9 +47,23 @@ Run the app's WiFi-setup wizard against the panel, which advertises as
 * The panel joins WiFi and `spa/<id>/online` reads a retained `true` (`docs/MQTT.md`).
 * The clock shows the time.
 
-## Replacing a panel
+## The device id
 
-The device id is compiled in (`CONFIG_SPA_HMI_MQTT_ID`, `spa1` here), so a new
-board takes over the old one's identity. Do not run both powered and on a network
-at once: both would publish to the same `spa/<id>/` topics and answer the same
-commands, and one board's last will could mark the other offline.
+Every board is its own tub to the app. Its id is `spa-` and the factory MAC, for
+example `spa-80f1b2d36640`, taken from the chip's eFuses at boot. A reflash or
+`--erase` cannot change it, and no build is specific to one board. The script
+ends by printing it as `ID:`, ready for the label.
+
+The app learns the id from the panel over BLE during the setup wizard and
+subscribes to `spa/<id>/` only, so a paired phone sees and commands that one tub.
+
+`CONFIG_SPA_HMI_MQTT_ID` overrides it with a fixed id, for a bench board. Every
+board built that way shares the id, so the script refuses such a build.
+
+Replacing a customer's panel therefore changes the tub's id: run the wizard on
+their phone again so the app pairs to the new board.
+
+**The id keeps tubs apart only in a well-behaved app.** Every board still carries
+the same broker login, and gives it to any phone in BLE range (`broker_get`).
+Whoever has it can subscribe to `spa/+/` and command every tub on the broker.
+Closing that needs a login per board, limited by the broker to its own topics.

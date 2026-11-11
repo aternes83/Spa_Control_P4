@@ -128,7 +128,7 @@ a network to do it, so the default build is the one that has been on the glass.
 cd p4_hmi
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.net" menuconfig
 #   Spa HMI -> WiFi SSID / password      (bench only; BLE provisioning replaces it)
-#           -> Broker URI / user / pass / device id
+#           -> Broker URI / user / pass  (leave device id empty: each board uses its MAC)
 #           -> Timezone                  (leave empty and the clock stays --:--)
 idf.py build flash monitor
 ```

@@ -8,6 +8,7 @@ idf_component_register(
         "spa_state.c"
         "spalink_port.c"
         "bench_peer.c"
+        "device_id.c"
         "net_link.c"
         "mqtt_spa.c"
         "ota.c"

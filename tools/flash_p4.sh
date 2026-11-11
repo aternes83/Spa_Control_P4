@@ -44,6 +44,10 @@ echo "$ID" | grep -q 'Detected flash size: 16MB' || die "partitions.csv needs 16
 echo "── building ──"
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.net;sdkconfig.local" build | grep -E 'binary size|rror'
 grep -Eq '^CONFIG_SPA_HMI_MQTT_URI="[^"]+"' sdkconfig || die "the build has no broker URI"
+# A compiled-in id is shared by every board built with it, so two of them would
+# answer each other's app. Each board must take its own from its MAC.
+grep -Eq '^CONFIG_SPA_HMI_MQTT_ID="[^"]+"' sdkconfig \
+    && die "CONFIG_SPA_HMI_MQTT_ID is set (look in sdkconfig.local); clear it so the board uses its own id"
 
 echo "── flashing ──"
 (cd build && limit 400 "${ESPTOOL[@]}" --after hard_reset "${WRITE[@]}" "@flash_args") | grep -E 'Hash of data|Wrote'
@@ -55,8 +59,8 @@ import serial
 
 # The checkpoints of a healthy boot, in order. The control board is not among
 # them: a panel on the bench has none, and says "waiting" indefinitely.
-WANT = ["App version:", "Display initialized", "Identified slave [esp32c6]",
-        'advertising as "SpaControl"']
+WANT = ["App version:", "device_id: device id ", "Display initialized",
+        "Identified slave [esp32c6]", 'advertising as "SpaControl"']
 BAD = re.compile(r"Guru Meditation|abort\(\)|the C6 never came up|Rebooting\.\.\.")
 
 port, deadline, log, conn = sys.argv[1], time.time() + 40, "", None
@@ -83,4 +87,5 @@ if crash or missing:
     print("FAIL: %s" % (crash.group(0) if crash else "never saw: %s" % missing))
     sys.exit(1)
 print("OK: booted, display up, C6 answering, advertising as SpaControl")
+print("ID: %s" % re.search(r"device id (spa-[0-9a-f]{12})", log).group(1))
 PY

@@ -109,11 +109,13 @@ config SPA_HMI_MQTT_ID
     depends on SPA_HMI_MQTT
     default ""
     help
-        Set it and the topics become spa/<id>/status and spa/<id>/commands,
-        which is how more than one tub shares a broker. Leave it empty for the
-        bare spa/status and spa/commands the app falls back to.
+        Leave it empty. Each board then takes its id from its factory MAC
+        (spa-80f1b2d36640), so every panel sold is a different tub to the app,
+        which learns the id over BLE when it pairs. Topics are spa/<id>/...
 
-        It is also published as the "id" field either way.
+        Setting it gives every board built from this config the SAME id, and
+        any two of them would answer each other's app. Bench use only;
+        tools/flash_p4.sh refuses a build with it set.
 
 config SPA_HMI_MQTT_FW
     string "Firmware version reported in the status payload"

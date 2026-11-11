@@ -90,9 +90,13 @@ fallback:
 | `spa/commands` | app → P4 | partial JSON; omitted fields mean "unchanged" |
 | `spa/online` | P4 **and the broker** → app | `true` / `false`, retained |
 
-With a device id configured all three become `spa/<id>/status`,
-`spa/<id>/commands` and `spa/<id>/online`, which is how more than one tub shares
-a broker.
+This firmware always uses `spa/<id>/status`, `spa/<id>/commands` and
+`spa/<id>/online`. The id is `spa-` and the board's factory MAC
+(`spa-80f1b2d36640`), so every board sold is a separate tub on the broker; the
+app learns it over BLE (`broker_get`, `docs/BLE.md`) and subscribes to that tub
+only. The bare topics are the v2.0 firmware's: every tub using them would share
+them, so this firmware never does. `CONFIG_SPA_HMI_MQTT_ID` overrides the id
+for a bench board.
 
 ## `spa/online` — why the broker has to be the one to say it
 
