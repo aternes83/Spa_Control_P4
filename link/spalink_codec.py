@@ -94,6 +94,9 @@ IN_HIGH_LIMIT_OK = 0x02
 IN_ESTOP_OK      = 0x04
 IN_TEMP_SENSOR_OK = 0x08
 IN_SPA_ENABLE    = 0x10
+# Not an input: this board is not hearing the panel and is running the failsafe
+# request set. Set on a problem, so a controller that predates it reads as heard.
+IN_HMI_UNHEARD   = 0x20
 
 # MSG_STATUS byte 2 — fault: bit7 set = faulted, low nibble = code (see spa_core)
 FAULT_ACTIVE = 0x80

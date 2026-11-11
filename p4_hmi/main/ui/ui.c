@@ -309,6 +309,11 @@ static void tile_apply(ui_tile_t *t, ui_ctl_state_t stt, bool enabled,
         break;
     }
 
+    /* Above any override: a tile's own explanation of a refusal is wrong when
+     * the controller never received the request in the first place. */
+    if (stt == UI_STATE_REFUSED && (s_last.safety_inputs & SPALINK_IN_HMI_UNHEARD)) {
+        text_override = "Not heard";
+    }
     set_text(t->lbl_state, text_override ? text_override : text);
 
     if (t->applied && t->last_state == stt && t->last_enabled == enabled &&

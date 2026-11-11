@@ -82,6 +82,14 @@ arbitration over `STATUS` (0x110), which wins over `REQ` (0x120).
 `TEMP_SENSOR_OK 0x08`, `SPA_ENABLE 0x10`. These are carried so the HMI can
 *explain* a fault instead of just naming it.
 
+`HMI_UNHEARD 0x20` is not an input. It says the S3 has not heard the P4 within
+the link timeout and is running the failsafe request set. The link can fail in
+one direction only: a loose wire on the bench left the P4 hearing every `STATUS`
+while the S3 heard nothing for minutes, and the panel then had no way to know
+its requests were being ignored. With the bit, a refused tile reads *Not heard*.
+It is set on a problem rather than on health, so a controller that predates it
+reads as heard.
+
 `fault`: bit 7 set when faulted, low nibble is the code — `1` no flow,
 `2` high limit, `3` over temp, `4` e-stop, `5` temp sensor. Same numbering as
 `spa_core.FAULT_*` and `spa_state_t.fault_code`.

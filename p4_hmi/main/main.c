@@ -106,12 +106,13 @@ static void log_state(const spa_state_t *s)
         ESP_LOGI(TAG, "waiting for the control board...");
         return;
     }
-    ESP_LOGI(TAG, "%s water=%d F set=%d F out=0x%02x req=0x%02x %s%s (stale %lu ms)",
+    ESP_LOGI(TAG, "%s water=%d F set=%d F out=0x%02x req=0x%02x %s%s%s (stale %lu ms)",
              s->link_up ? "[up]  " : "[DOWN]",
              spa_state_water_f(s), spa_state_setpoint_f(s), s->outputs,
              s_req.requests,
              s->fault_active ? "FAULT: " : "",
              s->fault_active ? spa_fault_text(s->fault_code) : "ok",
+             (s->safety_inputs & SPALINK_IN_HMI_UNHEARD) ? ", S3 NOT HEARING US" : "",
              (unsigned long)s->stale_ms);
 }
 

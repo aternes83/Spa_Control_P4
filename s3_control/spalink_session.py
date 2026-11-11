@@ -267,12 +267,16 @@ _OUT_BITS = ((codec.OUT_PUMP1_LOW, "xPump1_Low"),
              (codec.OUT_LIGHT, "xLight"))
 
 
-def status_payload(outputs, inputs, fault_code):
+def status_payload(outputs, inputs, fault_code, heard=True):
     """Pack MSG_STATUS: outputs, safety inputs, fault, timed-out loads.
 
     Byte 3 is an addition to the frame, not a change to it: a panel built
     against the 3-byte version ignores the extra byte, and this board reads a
     missing one as "nothing timed out". See docs/PROTOCOL.md.
+
+    heard=False sets IN_HMI_UNHEARD. The panel can still hear this board when
+    this board cannot hear it, and without the bit it has no way to know its
+    requests are being replaced by the failsafe set.
     """
     o = 0
     for bit, key in _OUT_BITS:
@@ -291,5 +295,7 @@ def status_payload(outputs, inputs, fault_code):
                      (codec.IN_SPA_ENABLE, "xSpaEnable")):
         if inputs.get(key):
             i |= bit
+    if not heard:
+        i |= codec.IN_HMI_UNHEARD
     f = (codec.FAULT_ACTIVE if fault_code else 0) | (fault_code & codec.FAULT_CODE)
     return bytes(bytearray([o, i, f, t]))

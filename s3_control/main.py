@@ -236,7 +236,8 @@ def main():
         if ticks_diff(now, next_state_ms) >= 0:
             next_state_ms = ticks_add(now, STATE_TX_MS)
             session.send(codec.MSG_STATUS,
-                         link.status_payload(outputs, inputs, outputs["iFaultCode"]))
+                         link.status_payload(outputs, inputs, outputs["iFaultCode"],
+                                             heard=link_up))
             session.send(codec.MSG_TEMP,
                          codec.pack_i16(codec.f_to_dF(inputs["rWaterTemp_F"]))
                          + codec.pack_i16(codec.f_to_dF(ctrl.temp_setpoint_f)))

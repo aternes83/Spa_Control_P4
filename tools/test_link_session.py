@@ -203,6 +203,11 @@ def main():
           timed[3] == (codec.OUT_PUMP2 | codec.OUT_LIGHT), hex(timed[3]))
     check("a timeout is reported without disturbing the outputs byte",
           timed[0] == p[0], (hex(timed[0]), hex(p[0])))
+    check("a board that hears the panel leaves the unheard bit clear",
+          not (p[1] & codec.IN_HMI_UNHEARD), hex(p[1]))
+    unheard = session.status_payload(outputs, inputs, 0, heard=False)
+    check("one that does not sets it, alongside the real inputs",
+          unheard[1] == (clear[1] | codec.IN_HMI_UNHEARD), hex(unheard[1]))
 
     print("request decoding")
     r = session.requests_from_msg(bytes([codec.REQ_JETS | codec.REQ_LIGHT]))

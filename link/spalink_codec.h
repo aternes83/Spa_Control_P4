@@ -75,6 +75,10 @@
 #define SPALINK_IN_ESTOP_OK       0x04
 #define SPALINK_IN_TEMP_SENSOR_OK 0x08
 #define SPALINK_IN_SPA_ENABLE     0x10
+/* Not an input: the controller is not hearing this panel and is running the
+ * failsafe request set. Set on a problem, so an older controller that never
+ * sends it reads as "heard". */
+#define SPALINK_IN_HMI_UNHEARD    0x20
 
 /* STATUS byte 2 — fault */
 #define SPALINK_FAULT_ACTIVE 0x80
