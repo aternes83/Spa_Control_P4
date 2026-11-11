@@ -41,6 +41,10 @@ typedef struct {
      * controller that predates STATUS byte 3 leaves this 0, which reads as
      * "nothing timed out" and keeps the old behaviour. */
     uint8_t  timed_out;
+    /* Whether the last STATUS carried that byte at all. Without it the panel
+     * cannot tell a timed-out load from one being held off for any other
+     * reason, and with it a refusal is never a timeout. */
+    bool     timed_out_known;
     bool     fault_active;
     uint8_t  fault_code;
     int16_t  water_dF;         /* deci-Fahrenheit */

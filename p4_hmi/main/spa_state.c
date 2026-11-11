@@ -60,6 +60,7 @@ bool spa_state_apply(spa_state_t *s, const spalink_msg_t *m, uint32_t now_ms)
             s->outputs = m->payload[0];
             s->safety_inputs = m->payload[1];
             s->timed_out = timed_out;
+            s->timed_out_known = (m->len >= 4);
         }
         {
             bool active = (m->payload[2] & SPALINK_FAULT_ACTIVE) != 0;

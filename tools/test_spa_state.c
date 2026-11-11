@@ -67,6 +67,7 @@ int main(void)
     check("identical status is not a redraw", !spa_state_apply(&s, &m, 1100), 0);
     check("a three-byte status reports nothing timed out", s.timed_out == 0,
           s.timed_out);
+    check("and cannot say whether anything did", !s.timed_out_known, 0);
 
     /* Byte 3 is optional, so both lengths have to decode. A controller that
      * predates it must keep meaning "nothing timed out" rather than leaving a
@@ -76,10 +77,13 @@ int main(void)
     check("byte 3 is a redraw when it changes", spa_state_apply(&s, &m, 1150), 0);
     check("and names the timed-out loads",
           s.timed_out == (SPALINK_OUT_PUMP2 | SPALINK_OUT_LIGHT), s.timed_out);
+    check("a four-byte status says what timed out, even when nothing did",
+          s.timed_out_known, 0);
     check("an unchanged byte 3 is not a redraw", !spa_state_apply(&s, &m, 1160), 0);
     m = msg(SPALINK_MSG_STATUS, st, 3);
     check("dropping back to three bytes clears it",
-          spa_state_apply(&s, &m, 1170) && s.timed_out == 0, s.timed_out);
+          spa_state_apply(&s, &m, 1170) && s.timed_out == 0 && !s.timed_out_known,
+          s.timed_out);
 
     printf("temperature\n");
     uint8_t tp[4];

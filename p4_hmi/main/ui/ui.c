@@ -712,15 +712,18 @@ void ui_tick(const spa_state_t *s, uint32_t now_ms, ui_out_t *out)
     if (lst == UI_STATE_ON && s->light_remain_s > 0) {
         ui_format_duration(s->light_remain_s, light_text, sizeof(light_text));
         light_label = light_text;
-    } else if (lst == UI_STATE_REFUSED && s->light_remain_s == 0) {
+    } else if (lst == UI_STATE_REFUSED && s->light_remain_s == 0 &&
+               !s->timed_out_known) {
         /* The light has its own run timer on the S3. Once it expires the
          * controller drops the load while our request is still standing, which
          * is a timeout rather than a refusal and should not read as a fault.
          *
-         * A current controller says so in STATUS byte 3 and the request is
-         * released above, so the tile goes to Off and this never fires. It is
-         * kept for a controller that predates that byte, where the request does
-         * go on standing and the least this can do is name what happened. */
+         * Only a controller that predates STATUS byte 3 needs this guess. A
+         * current one names a timeout in that byte and the request is released
+         * above, so a light it is holding off for any other reason is a
+         * refusal. Guessing anyway showed "Timed out" whenever the S3 stopped
+         * hearing the panel: its failsafe drops the light and reports no time
+         * left, which looks exactly like an expired timer. */
         light_label = "Timed out";
     }
     tile_apply(&s_t_light, lst, live, light_label);
