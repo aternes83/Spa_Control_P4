@@ -51,6 +51,17 @@ static const char *TAG = "spa_hmi";
  * anything faster only costs LVGL lock contention. */
 #define UI_REFRESH_MS   100
 #define POLL_MS         20
+/* When this panel may transmit. The pair is half-duplex and the S3 cannot hear
+ * while it talks (its /RE is tied to DE), so a frame sent over one of its
+ * STATUS frames is simply lost. Sending on our own timer, 400 ms against its
+ * 200 ms, let the two drift into step: on the bench the S3 then heard nothing
+ * for up to 75 s at a time while the panel heard it perfectly, and its failsafe
+ * dropped the light and pumps over and over. The S3 never sends STATUS sooner
+ * than 200 ms after the last one, so the gap just after a frame from it is
+ * always clear. If it has gone quiet there is nothing to collide with, and the
+ * timer alone decides, so a link can still come up. */
+#define TX_WINDOW_MS    50
+#define PEER_QUIET_MS   300
 
 static spa_state_t   s_state;
 static spa_request_t s_req;
@@ -150,6 +161,11 @@ static void link_task(void *arg)
     uint32_t next_req = 0;
     uint32_t next_ui = 0;
     bool healthy_reported = false;
+    bool req_due = false;
+    bool sp_due = false;
+    float sp_f = 0;
+    bool heard = false;
+    uint32_t last_rx = 0;
 
     for (;;) {
         uint32_t t = now_ms();
@@ -162,6 +178,8 @@ static void link_task(void *arg)
         spalink_msg_t m;
         while (spalink_port_recv(&m)) {
             spa_state_apply(&s_state, &m, t);
+            heard = true;
+            last_rx = t;
         }
 #if CONFIG_SPA_HMI_BENCH_PEER
         /* Same path, same state model — the UI cannot tell the difference, which
@@ -188,26 +206,27 @@ static void link_task(void *arg)
                 ui_tick(&s_state, t, &out);
                 bsp_display_unlock();
 
-                /* A press should not wait out the keepalive slot. Sending on the
-                 * change costs one extra frame on an idle wire and takes the
-                 * worst case from ~500 ms to ~100 ms, which is the difference
-                 * between a button that feels wired and one that feels polled.
-                 * It changes nothing about the protocol: REQ still carries the
-                 * complete desired state, so an extra one is a restatement. */
+                /* A press should not wait out the keepalive: it goes in the
+                 * next transmit window, at most ~250 ms away, rather than up to
+                 * 400 ms. It changes nothing about the protocol: REQ still
+                 * carries the complete desired state, so an extra one is a
+                 * restatement. */
                 if (out.requests != s_req.requests || out.modes != s_req.modes) {
                     s_req.requests = out.requests;
                     s_req.modes = out.modes;
-                    uint8_t payload[2] = { s_req.requests, s_req.modes };
-                    spalink_port_send(SPALINK_MSG_REQ, payload, sizeof(payload), false);
+                    req_due = true;
                     next_req = t + REQ_TX_MS;
                 }
+                /* Not restated, so it must not be sent into a collision. */
                 if (out.send_setpoint) {
-                    send_setpoint_f((float)out.setpoint_f);
+                    sp_due = true;
+                    sp_f = (float)out.setpoint_f;
                 }
 
                 /* Outside the display lock: a broker that has stopped reading
-                 * must never be able to hold the panel's redraw. The publisher
-                 * is a no-op when nothing changed. */
+                 * must never be able to hold the panel's redraw. It never
+                 * blocks this task either (see mqtt_spa_publish), and is a
+                 * no-op when nothing changed. */
                 mqtt_spa_publish(&s_state, &out, t);
             }
         }
@@ -217,8 +236,20 @@ static void link_task(void *arg)
          * one mechanism, so the two cannot drift apart. */
         if ((int32_t)(t - next_req) >= 0) {
             next_req = t + REQ_TX_MS;
-            uint8_t payload[2] = { s_req.requests, s_req.modes };
-            spalink_port_send(SPALINK_MSG_REQ, payload, sizeof(payload), false);
+            req_due = true;
+        }
+
+        uint32_t since_rx = t - last_rx;
+        if (!heard || since_rx < TX_WINDOW_MS || since_rx > PEER_QUIET_MS) {
+            if (req_due) {
+                req_due = false;
+                uint8_t payload[2] = { s_req.requests, s_req.modes };
+                spalink_port_send(SPALINK_MSG_REQ, payload, sizeof(payload), false);
+            }
+            if (sp_due) {
+                sp_due = false;
+                send_setpoint_f(sp_f);
+            }
         }
 
         log_state(&s_state);

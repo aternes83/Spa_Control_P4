@@ -28,7 +28,8 @@
 void mqtt_spa_start(void);
 
 /* Publish if anything changed, or if the heartbeat is due. Call from the link
- * task on every UI tick — it is cheap when there is nothing to say. */
+ * task on every UI tick. It never blocks: the payload is handed to a publisher
+ * task, because the broker must not be able to delay the S3's keepalive. */
 void mqtt_spa_publish(const spa_state_t *s, const ui_out_t *o, uint32_t now_ms);
 
 /* Connected to the broker and subscribed. For the diagnostics screen. */

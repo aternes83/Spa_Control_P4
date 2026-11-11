@@ -173,6 +173,20 @@ older node.
 | P4 request/keepalive | 400 ms | four per timeout window; one loss is harmless |
 | Link timeout, both ends | 1500 ms | rides out a P4 reflash blip; a user still sees jets stop |
 | UART baud | 115200 | ~1 % of capacity — headroom for noise, not speed |
+| P4 transmit window | 50 ms after a frame from the S3 | the pair is half-duplex; see below |
+
+**The P4 transmits only just after hearing the S3.** The S3's `/RE` is tied to
+`DE`, so it is deaf while it talks, and a P4 frame sent over one of its frames is
+lost. With both ends on their own timers (400 ms against 200 ms) the two can drift
+into step and stay there for as long as their clocks agree. The S3 never sends
+`STATUS` sooner than 200 ms after the last, so the 50 ms after any frame from it
+is clear. When it has been silent for 300 ms there is nothing to collide with,
+and the P4 sends on its timer alone, so a link can still come up. `SETPOINT`
+uses the same window, because it is not restated if lost.
+
+This is sound for one shared pair, but it is not yet shown to have fixed anything.
+The dropouts that prompted it, the S3 hearing nothing from the P4 for up to 75 s,
+stopped when a loose wire was reseated, at the same time as this change went in.
 
 ## Failure behaviour
 

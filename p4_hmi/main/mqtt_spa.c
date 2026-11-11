@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "net_link.h"
 #include "ota.h"
@@ -33,6 +34,15 @@ static char s_topic_cmd[96];
 static char s_topic_online[96];
 static char s_last[512];          /* last payload, to publish only on change */
 static uint32_t s_next_hb_ms;
+
+/* The newest status waiting for the broker. One slot, overwritten: a status
+ * nobody has sent yet is worth nothing once a newer one exists. */
+typedef struct {
+    int  len;
+    char buf[512];
+} pub_msg_t;
+static QueueHandle_t s_pub_q;
+static pub_msg_t s_pub_out;       /* the link task's copy, kept off its stack */
 
 bool mqtt_spa_up(void) { return s_up; }
 
@@ -182,7 +192,7 @@ static int build_status(char *buf, size_t n, const spa_state_t *s, const ui_out_
 
 void mqtt_spa_publish(const spa_state_t *s, const ui_out_t *o, uint32_t now_ms)
 {
-    if (!s_up) {
+    if (!s_up || !s_pub_q) {
         return;
     }
 
@@ -200,10 +210,31 @@ void mqtt_spa_publish(const spa_state_t *s, const ui_out_t *o, uint32_t now_ms)
     s_next_hb_ms = now_ms + HEARTBEAT_MS;
     memcpy(s_last, buf, (size_t)len + 1);
 
-    /* Retained: an app opening cold gets the tub's state immediately instead of
-     * an empty screen until the next heartbeat. QoS 0 — the heartbeat is the
-     * recovery mechanism, and a queue of stale spa states is worth nothing. */
-    esp_mqtt_client_publish(s_client, s_topic_status, buf, len, 0, 1);
+    /* Handed to pub_task rather than published here. This runs on the link
+     * task, whose REQ frames are the S3's keepalive, and esp_mqtt_client_publish
+     * can block for seconds: it takes the client lock, which esp-mqtt's own task
+     * holds through a reconnect, a TLS handshake or a slow read, and then writes
+     * to the socket synchronously. On the bench that silenced the link for more
+     * than 1.5 s every 15-40 s, and each time the S3's failsafe dropped the
+     * light and the pumps. A slow broker may delay the app; never the tub. */
+    s_pub_out.len = len;
+    memcpy(s_pub_out.buf, buf, (size_t)len + 1);
+    xQueueOverwrite(s_pub_q, &s_pub_out);
+}
+
+static void pub_task(void *arg)
+{
+    (void)arg;
+    static pub_msg_t m;
+    for (;;) {
+        if (xQueueReceive(s_pub_q, &m, portMAX_DELAY) == pdTRUE && s_up) {
+            /* Retained: an app opening cold gets the tub's state immediately
+             * instead of an empty screen until the next heartbeat. QoS 0 — the
+             * heartbeat is the recovery mechanism, and a queue of stale spa
+             * states is worth nothing. */
+            esp_mqtt_client_publish(s_client, s_topic_status, m.buf, m.len, 0, 1);
+        }
+    }
 }
 
 /* ── Plumbing ────────────────────────────────────────────────────────────── */
@@ -329,6 +360,12 @@ void mqtt_spa_start(void)
         return;
     }
     esp_mqtt_client_register_event(s_client, ESP_EVENT_ANY_ID, on_mqtt, NULL);
+
+    s_pub_q = xQueueCreate(1, sizeof(pub_msg_t));
+    if (!s_pub_q || xTaskCreate(pub_task, "mqtt_pub", 4096, NULL, 3, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "no publisher task — status will not be sent");
+        s_pub_q = NULL;
+    }
 
     /* Starting the client is what must wait, not creating it.
      *
